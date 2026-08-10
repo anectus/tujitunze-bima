@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function Header() {
   return (
-    <header className="bg-white shadow-md fixed top-0 left-0 w-full z-50 px-9">
+    <header className="bg-white shadow-md fixed top-0 left-0 w-full z-50">
 
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
 
@@ -86,7 +86,7 @@ export default function Header() {
             hover:bg-green-800
             transition"
           >
-            Become a member
+           Become a member
           </Link>
 
         </div>
