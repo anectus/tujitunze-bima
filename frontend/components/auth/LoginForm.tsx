@@ -6,7 +6,7 @@ import Link from "next/link";
 
 export default function LoginForm() {
   const [formData, setFormData] = useState({
-    surname: "",
+    identifier: "",
     password: "",
   });
 
@@ -39,14 +39,14 @@ export default function LoginForm() {
 
     try {
       const response = await fetch(
-        "http://localhost:3000/auth/login",
+        "http://localhost:3002/auth/login",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            surname: formData.surname,
+            identifier: formData.identifier,
             password: formData.password,
           }),
         }
@@ -56,7 +56,7 @@ export default function LoginForm() {
 
       if (!response.ok) {
         throw new Error(
-          data.message || "Invalid surname or password."
+          data.message || "Invalid NIDA number, email, or password."
         );
       }
 
@@ -123,23 +123,23 @@ export default function LoginForm() {
             className="space-y-6"
           >
 
-            {/* Surname / Username */}
+            {/* NIDA Number or Email */}
             <div>
 
               <label
-                htmlFor="surname"
+                htmlFor="identifier"
                 className="block text-sm font-semibold text-gray-700 mb-2"
               >
                 Username
               </label>
 
               <input
-                id="surname"
-                name="surname"
+                id="identifier"
+                name="identifier"
                 type="text"
-                value={formData.surname}
+                value={formData.identifier}
                 onChange={handleChange}
-                placeholder="Enter your surname"
+                placeholder="Enter your NIDA number or email"
                 autoComplete="username"
                 required
                 className="
@@ -159,7 +159,7 @@ export default function LoginForm() {
               />
 
               <p className="mt-1 text-xs text-gray-500">
-                Your surname is your username.
+                Log in with your NIDA number or email address.
               </p>
 
             </div>
@@ -268,7 +268,7 @@ export default function LoginForm() {
 
             <p className="text-sm text-gray-600">
 
-              Don't have an account?{" "}
+              Don&apos;t have an account?{" "}
 
               <Link
                 href="/register"

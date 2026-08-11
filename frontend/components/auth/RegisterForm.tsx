@@ -7,7 +7,7 @@ import Link from "next/link";
 export default function RegisterForm() {
   const [formData, setFormData] = useState({
     firstName: "",
-    middleName: "",
+    secondName: "",
     surname: "",
     phoneNumber: "",
     nidaNumber: "",
@@ -56,7 +56,7 @@ export default function RegisterForm() {
       setLoading(true);
 
       const response = await fetch(
-        "http://localhost:3000/members/register",
+        "http://localhost:3002/members/register",
         {
           method: "POST",
           headers: {
@@ -64,11 +64,11 @@ export default function RegisterForm() {
           },
           body: JSON.stringify({
             firstName: formData.firstName,
-            middleName: formData.middleName,
+            secondName: formData.secondName || undefined,
             surname: formData.surname,
             phoneNumber: formData.phoneNumber,
             nidaNumber: formData.nidaNumber,
-            email: formData.email || null,
+            email: formData.email || undefined,
             password: formData.password,
           }),
         }
@@ -88,7 +88,7 @@ export default function RegisterForm() {
 
       setFormData({
         firstName: "",
-        middleName: "",
+        secondName: "",
         surname: "",
         phoneNumber: "",
         nidaNumber: "",
@@ -186,23 +186,25 @@ export default function RegisterForm() {
               />
             </div>
 
-            {/* Middle Name */}
+            {/* Second Name */}
             <div>
               <label
-                htmlFor="middleName"
+                htmlFor="secondName"
                 className="mb-2 block text-sm font-semibold text-gray-700"
               >
-                Middle Name
+                Second Name
+                <span className="ml-2 text-xs font-normal text-gray-500">
+                  (Optional)
+                </span>
               </label>
 
               <input
-                id="middleName"
-                name="middleName"
+                id="secondName"
+                name="secondName"
                 type="text"
-                value={formData.middleName}
+                value={formData.secondName}
                 onChange={handleChange}
-                placeholder="Enter your middle name"
-                required
+                placeholder="Enter your second name"
                 autoComplete="additional-name"
                 className="w-full rounded-lg border border-gray-300 px-4 py-3
                 text-gray-900 outline-none transition

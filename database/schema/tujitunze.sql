@@ -3,32 +3,41 @@
 -- HEALTH SAVINGS AND INSURANCE MANAGEMENT SYSTEM
 -- ============================================================
 -- Database: tujitunze
--- Authentication/member table: members
+-- Authentication table: users
 -- Database: PostgreSQL
 -- ============================================================
 
 
 -- ============================================================
--- 1. MEMBERS
+-- 1. USERS
 -- ============================================================
 -- Main registration and authentication table.
--- This matches the current NestJS registration entity.
+-- This matches the current NestJS User entity
+-- (backend/src/members/entities/user.entity.ts).
 
-CREATE TABLE members (
-    id SERIAL PRIMARY KEY,
+CREATE TABLE users (
+    user_id SERIAL PRIMARY KEY,
 
-    first_name VARCHAR(100) NOT NULL,
-    middle_name VARCHAR(100) NOT NULL,
-    surname VARCHAR(100) NOT NULL,
+    first_name VARCHAR(50) NOT NULL,
+    second_name VARCHAR(50),
+    surname VARCHAR(50) NOT NULL,
 
-    phone_number VARCHAR(20) UNIQUE NOT NULL,
-    nida_number VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE,
+    nida_number VARCHAR(20) UNIQUE NOT NULL,
 
-    email VARCHAR(150) UNIQUE,
+    gender VARCHAR(20),
+    date_of_birth DATE,
 
-    password_hash VARCHAR(255) NOT NULL,
+    address TEXT,
+    region VARCHAR(100),
+    district VARCHAR(100),
 
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    password_hash TEXT NOT NULL,
+
+    member_status VARCHAR(20) NOT NULL DEFAULT 'Pending',
+
+    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    phone_verified BOOLEAN NOT NULL DEFAULT FALSE,
 
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -57,7 +66,7 @@ CREATE TABLE member_roles (
     member_role_id SERIAL PRIMARY KEY,
 
     member_id INT NOT NULL
-        REFERENCES members(id)
+        REFERENCES users(user_id)
         ON DELETE CASCADE,
 
     role_id INT NOT NULL
@@ -116,19 +125,21 @@ CREATE TABLE telecom_operator_prefixes (
 
 
 -- ============================================================
--- 6. MEMBER PHONE NUMBERS
+-- 6. PHONE NUMBERS
 -- ============================================================
--- Registration already stores the primary phone in members.
--- This table allows additional phone numbers later.
+-- A user's mobile phone numbers. Registration creates the
+-- primary phone here; additional phones can be added later.
+-- This matches the current NestJS PhoneNumber entity
+-- (backend/src/members/entities/phone-number.entity.ts).
 
-CREATE TABLE member_phone_numbers (
+CREATE TABLE phone_numbers (
     phone_id SERIAL PRIMARY KEY,
 
-    member_id INT NOT NULL
-        REFERENCES members(id)
+    user_id INT NOT NULL
+        REFERENCES users(user_id)
         ON DELETE CASCADE,
 
-    operator_id INT
+    operator_id INT NOT NULL
         REFERENCES telecom_operators(operator_id),
 
     phone_number VARCHAR(20) UNIQUE NOT NULL,
@@ -136,8 +147,6 @@ CREATE TABLE member_phone_numbers (
     is_primary BOOLEAN NOT NULL DEFAULT FALSE,
 
     phone_status VARCHAR(20) NOT NULL DEFAULT 'Active',
-
-    verified BOOLEAN NOT NULL DEFAULT FALSE,
 
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -235,7 +244,7 @@ CREATE TABLE member_bank_accounts (
     member_bank_account_id SERIAL PRIMARY KEY,
 
     member_id INT NOT NULL
-        REFERENCES members(id)
+        REFERENCES users(user_id)
         ON DELETE CASCADE,
 
     bank_id INT NOT NULL
@@ -298,7 +307,7 @@ CREATE TABLE health_wallets (
     wallet_id SERIAL PRIMARY KEY,
 
     member_id INT UNIQUE NOT NULL
-        REFERENCES members(id)
+        REFERENCES users(user_id)
         ON DELETE CASCADE,
 
     wallet_number VARCHAR(50) UNIQUE NOT NULL,
@@ -324,10 +333,10 @@ CREATE TABLE telecom_contributions (
     contribution_id SERIAL PRIMARY KEY,
 
     member_id INT NOT NULL
-        REFERENCES members(id),
+        REFERENCES users(user_id),
 
     phone_id INT
-        REFERENCES member_phone_numbers(phone_id),
+        REFERENCES phone_numbers(phone_id),
 
     operator_id INT NOT NULL
         REFERENCES telecom_operators(operator_id),
@@ -431,7 +440,7 @@ CREATE TABLE member_insurance (
     member_insurance_id SERIAL PRIMARY KEY,
 
     member_id INT NOT NULL
-        REFERENCES members(id)
+        REFERENCES users(user_id)
         ON DELETE CASCADE,
 
     plan_id INT NOT NULL
@@ -457,7 +466,7 @@ CREATE TABLE dependents (
     dependent_id SERIAL PRIMARY KEY,
 
     member_id INT NOT NULL
-        REFERENCES members(id)
+        REFERENCES users(user_id)
         ON DELETE CASCADE,
 
     first_name VARCHAR(50) NOT NULL,
@@ -518,7 +527,7 @@ CREATE TABLE healthcare_verifications (
         REFERENCES hospitals(hospital_id),
 
     member_id INT NOT NULL
-        REFERENCES members(id),
+        REFERENCES users(user_id),
 
     verification_method VARCHAR(50) NOT NULL,
 
@@ -540,7 +549,7 @@ CREATE TABLE healthcare_claims (
     claim_id SERIAL PRIMARY KEY,
 
     member_id INT NOT NULL
-        REFERENCES members(id),
+        REFERENCES users(user_id),
 
     hospital_id INT NOT NULL
         REFERENCES hospitals(hospital_id),
@@ -572,7 +581,7 @@ CREATE TABLE notifications (
     notification_id SERIAL PRIMARY KEY,
 
     member_id INT NOT NULL
-        REFERENCES members(id)
+        REFERENCES users(user_id)
         ON DELETE CASCADE,
 
     notification_type VARCHAR(50),
@@ -599,7 +608,7 @@ CREATE TABLE sessions (
     session_id SERIAL PRIMARY KEY,
 
     member_id INT NOT NULL
-        REFERENCES members(id)
+        REFERENCES users(user_id)
         ON DELETE CASCADE,
 
     ip_address INET,
@@ -624,7 +633,7 @@ CREATE TABLE audit_logs (
     audit_id SERIAL PRIMARY KEY,
 
     member_id INT
-        REFERENCES members(id),
+        REFERENCES users(user_id),
 
     action_type VARCHAR(100) NOT NULL,
 
@@ -650,7 +659,7 @@ CREATE TABLE password_resets (
     reset_id SERIAL PRIMARY KEY,
 
     member_id INT NOT NULL
-        REFERENCES members(id)
+        REFERENCES users(user_id)
         ON DELETE CASCADE,
 
     reset_token TEXT NOT NULL,
@@ -671,7 +680,7 @@ CREATE TABLE verification_tokens (
     verification_token_id SERIAL PRIMARY KEY,
 
     member_id INT NOT NULL
-        REFERENCES members(id)
+        REFERENCES users(user_id)
         ON DELETE CASCADE,
 
     token TEXT NOT NULL,
@@ -705,20 +714,17 @@ CREATE TABLE system_settings (
 -- 28. PERFORMANCE INDEXES
 -- ============================================================
 
-CREATE INDEX idx_members_nida
-ON members(nida_number);
+CREATE INDEX idx_users_nida
+ON users(nida_number);
 
-CREATE INDEX idx_members_email
-ON members(email);
+CREATE INDEX idx_users_email
+ON users(email);
 
-CREATE INDEX idx_members_phone
-ON members(phone_number);
+CREATE INDEX idx_phone_numbers_user
+ON phone_numbers(user_id);
 
-CREATE INDEX idx_member_phone_numbers_member
-ON member_phone_numbers(member_id);
-
-CREATE INDEX idx_member_phone_numbers_operator
-ON member_phone_numbers(operator_id);
+CREATE INDEX idx_phone_numbers_operator
+ON phone_numbers(operator_id);
 
 CREATE INDEX idx_telecom_prefix
 ON telecom_operator_prefixes(prefix);
@@ -792,6 +798,31 @@ VALUES
     ('Tigo', '255'),
     ('Halotel', '255'),
     ('TTCL', '255');
+
+
+-- ============================================================
+-- 30b. INITIAL TELECOM OPERATOR PREFIXES
+-- ============================================================
+-- Maps Tanzanian mobile number prefixes to operators, used by
+-- registration to attribute a new phone number to its operator.
+-- Prefixes below are a best-effort reference set and should be
+-- verified/updated against the current TCRA numbering plan.
+
+INSERT INTO telecom_operator_prefixes
+    (operator_id, prefix, country_code, prefix_type)
+VALUES
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Vodacom'), '074', '255', 'Mobile'),
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Vodacom'), '075', '255', 'Mobile'),
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Vodacom'), '076', '255', 'Mobile'),
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Tigo'), '071', '255', 'Mobile'),
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Tigo'), '065', '255', 'Mobile'),
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Tigo'), '067', '255', 'Mobile'),
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Airtel'), '078', '255', 'Mobile'),
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Airtel'), '068', '255', 'Mobile'),
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Airtel'), '069', '255', 'Mobile'),
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Halotel'), '061', '255', 'Mobile'),
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Halotel'), '062', '255', 'Mobile'),
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'TTCL'), '073', '255', 'Mobile');
 
 
 -- ============================================================

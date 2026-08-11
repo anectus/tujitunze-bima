@@ -9,9 +9,9 @@ export const databaseConfig = (): TypeOrmModuleOptions => ({
 
   username: process.env.DB_USERNAME || 'postgres',
 
-  password: process.env.DB_PASSWORD || '',
+  password: process.env.DB_PASSWORD || 'postgres',
 
-  database: process.env.DB_DATABASE || 'tujitunze',
+  database: process.env.DB_NAME || 'tujitunze',
 
   autoLoadEntities: true,
 

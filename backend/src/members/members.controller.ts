@@ -1,23 +1,17 @@
-import {
-  Body,
-  Controller,
-  Post,
-} from '@nestjs/common';
+import { Body, Controller, Post } from '@nestjs/common';
 
 import { MembersService } from './members.service';
 
 @Controller('members')
 export class MembersController {
-  constructor(
-    private readonly membersService: MembersService,
-  ) {}
+  constructor(private readonly membersService: MembersService) {}
 
   @Post('register')
   async register(
     @Body()
     body: {
       firstName: string;
-      middleName: string;
+      secondName?: string;
       surname: string;
       phoneNumber: string;
       nidaNumber: string;
