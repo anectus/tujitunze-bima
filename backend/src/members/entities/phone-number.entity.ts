@@ -37,6 +37,14 @@ export class PhoneNumber {
   phoneNumber!: string;
 
   @Column({
+    name: 'account_number',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+  })
+  accountNumber!: string | null;
+
+  @Column({
     name: 'is_primary',
     type: 'boolean',
     default: false,

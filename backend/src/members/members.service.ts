@@ -2,57 +2,116 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 
 import * as bcrypt from 'bcrypt';
 
 import { User } from './entities/user.entity';
 import { PhoneNumber } from './entities/phone-number.entity';
+import { MemberBankAccount } from './entities/bank-account.entity';
+import { RegisterDto } from './dto/register.dto';
+import { AddPhoneNumberDto } from './dto/add-phone-number.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { AddBankAccountDto } from './dto/add-bank-account.dto';
+
+interface TelecomOperator {
+  operator_id: number;
+  operator_name: string;
+}
+
+interface Bank {
+  bank_id: number;
+  bank_name: string;
+}
 
 @Injectable()
 export class MembersService {
   constructor(private readonly dataSource: DataSource) {}
 
-  async register(data: {
-    firstName: string;
-    secondName?: string;
-    surname: string;
-    phoneNumber: string;
-    nidaNumber: string;
-    email?: string;
-    password: string;
-  }) {
-    // =====================================================
-    // 1. Validate required fields
-    // =====================================================
+  // =====================================================
+  // Normalize a Tanzanian phone number.
+  //
+  // Accepted: 0712345678 / 255712345678 / +255712345678
+  // Stored:   0712345678
+  // =====================================================
 
-    if (!data.firstName?.trim()) {
-      throw new BadRequestException('First name is required');
+  private normalizeTanzanianPhone(raw: string): string {
+    let phoneNumber = raw.trim().replace(/\s+/g, '');
+
+    if (phoneNumber.startsWith('+255')) {
+      phoneNumber = '0' + phoneNumber.substring(4);
+    } else if (phoneNumber.startsWith('255')) {
+      phoneNumber = '0' + phoneNumber.substring(3);
     }
 
-    if (!data.surname?.trim()) {
-      throw new BadRequestException('Surname is required');
+    if (!/^0[67]\d{8}$/.test(phoneNumber)) {
+      throw new BadRequestException('Invalid Tanzanian mobile phone number');
     }
 
-    if (!data.phoneNumber?.trim()) {
-      throw new BadRequestException('Phone number is required');
-    }
+    return phoneNumber;
+  }
 
-    if (!data.nidaNumber?.trim()) {
-      throw new BadRequestException('NIDA number is required');
-    }
+  private async findActiveOperatorForPrefix(
+    manager: EntityManager,
+    prefix: string,
+  ): Promise<TelecomOperator> {
+    const operatorResult = await manager.query<TelecomOperator[]>(
+      `
+          SELECT
+            o.operator_id,
+            o.operator_name
+          FROM telecom_operators o
+          INNER JOIN telecom_operator_prefixes p
+            ON p.operator_id = o.operator_id
+          WHERE p.prefix = $1
+            AND p.status = 'Active'
+            AND o.status = 'Active'
+          LIMIT 1
+          `,
+      [prefix],
+    );
 
-    if (!data.password) {
-      throw new BadRequestException('Password is required');
-    }
-
-    if (data.password.length < 8) {
+    if (!operatorResult || operatorResult.length === 0) {
       throw new BadRequestException(
-        'Password must contain at least 8 characters',
+        `Telecom operator for prefix ${prefix} is not supported`,
       );
     }
+
+    return operatorResult[0];
+  }
+
+  private async findActiveBank(
+    manager: EntityManager,
+    bankId: number,
+  ): Promise<Bank> {
+    const bankResult = await manager.query<Bank[]>(
+      `
+      SELECT bank_id, bank_name
+      FROM banks
+      WHERE bank_id = $1
+        AND status = 'Active'
+      LIMIT 1
+      `,
+      [bankId],
+    );
+
+    if (!bankResult || bankResult.length === 0) {
+      throw new BadRequestException('Selected bank is not supported');
+    }
+
+    return bankResult[0];
+  }
+
+  async register(data: RegisterDto) {
+    // =====================================================
+    // 1. Field presence/shape is enforced by RegisterDto via the
+    //    global ValidationPipe — only business-rule validation
+    //    (phone format, uniqueness) happens here.
+    // =====================================================
 
     // =====================================================
     // 2. Clean input
@@ -68,32 +127,24 @@ export class MembersService {
 
     const nidaNumber = data.nidaNumber.trim();
 
-    let phoneNumber = data.phoneNumber.trim();
+    const phoneNumber = this.normalizeTanzanianPhone(data.phoneNumber);
 
-    // Remove spaces
-    phoneNumber = phoneNumber.replace(/\s+/g, '');
+    const additionalPhoneNumbers = (data.additionalPhoneNumbers ?? []).map(
+      (entry) => ({
+        operatorId: entry.operatorId,
+        phoneNumber: this.normalizeTanzanianPhone(entry.phoneNumber),
+      }),
+    );
 
-    // =====================================================
-    // 3. Normalize Tanzanian phone number
-    //
-    // Accepted:
-    // 0712345678
-    // 255712345678
-    // +255712345678
-    //
-    // Stored:
-    // 0712345678
-    // =====================================================
+    const allPhoneNumbers = [
+      phoneNumber,
+      ...additionalPhoneNumbers.map((entry) => entry.phoneNumber),
+    ];
 
-    if (phoneNumber.startsWith('+255')) {
-      phoneNumber = '0' + phoneNumber.substring(4);
-    } else if (phoneNumber.startsWith('255')) {
-      phoneNumber = '0' + phoneNumber.substring(3);
-    }
-
-    // Tanzania mobile number validation
-    if (!/^0[67]\d{8}$/.test(phoneNumber)) {
-      throw new BadRequestException('Invalid Tanzanian mobile phone number');
+    if (new Set(allPhoneNumbers).size !== allPhoneNumbers.length) {
+      throw new BadRequestException(
+        'Each phone number can only be submitted once',
+      );
     }
 
     // =====================================================
@@ -106,9 +157,7 @@ export class MembersService {
       // =================================================
 
       const existingPhone = await manager.findOne(PhoneNumber, {
-        where: {
-          phoneNumber,
-        },
+        where: allPhoneNumbers.map((number) => ({ phoneNumber: number })),
       });
 
       if (existingPhone) {
@@ -155,31 +204,28 @@ export class MembersService {
       // 9. Find telecom operator
       // =================================================
 
-      const operatorResult = await manager.query<
-        { operator_id: number; operator_name: string }[]
-      >(
-        `
-            SELECT
-              o.operator_id,
-              o.operator_name
-            FROM telecom_operators o
-            INNER JOIN telecom_operator_prefixes p
-              ON p.operator_id = o.operator_id
-            WHERE p.prefix = $1
-              AND p.status = 'Active'
-              AND o.status = 'Active'
-            LIMIT 1
-            `,
-        [prefix],
+      const operator = await this.findActiveOperatorForPrefix(manager, prefix);
+
+      // =================================================
+      // 9b. Resolve + validate additional phone numbers
+      // =================================================
+
+      const resolvedAdditionalPhones = await Promise.all(
+        additionalPhoneNumbers.map(async (entry) => {
+          const entryOperator = await this.findActiveOperatorForPrefix(
+            manager,
+            entry.phoneNumber.substring(0, 3),
+          );
+
+          if (entryOperator.operator_id !== entry.operatorId) {
+            throw new BadRequestException(
+              `Selected network does not match ${entry.phoneNumber}`,
+            );
+          }
+
+          return { ...entry, operator: entryOperator };
+        }),
       );
-
-      if (!operatorResult || operatorResult.length === 0) {
-        throw new BadRequestException(
-          `Telecom operator for prefix ${prefix} is not supported`,
-        );
-      }
-
-      const operator = operatorResult[0];
 
       // =================================================
       // 10. Hash password
@@ -234,6 +280,55 @@ export class MembersService {
       const savedPhone = await manager.save(PhoneNumber, phone);
 
       // =================================================
+      // 13b. Save additional phone numbers
+      // =================================================
+
+      const savedAdditionalPhones = await Promise.all(
+        resolvedAdditionalPhones.map(async (entry) => {
+          const additionalPhone = manager.create(PhoneNumber, {
+            userId: savedUser.userId,
+
+            operatorId: entry.operator.operator_id,
+
+            phoneNumber: entry.phoneNumber,
+
+            isPrimary: false,
+
+            phoneStatus: 'Active',
+          });
+
+          const saved = await manager.save(PhoneNumber, additionalPhone);
+
+          return {
+            phoneId: saved.phoneId,
+            phoneNumber: saved.phoneNumber,
+            operatorId: saved.operatorId,
+            operatorName: entry.operator.operator_name,
+            isPrimary: saved.isPrimary,
+            phoneStatus: saved.phoneStatus,
+          };
+        }),
+      );
+
+      // =================================================
+      // 14b. Assign the default 'Member' role
+      // =================================================
+
+      const roleResult = await manager.query<{ role_id: number }[]>(
+        `SELECT role_id FROM roles WHERE role_name = $1 LIMIT 1`,
+        ['Member'],
+      );
+
+      if (!roleResult || roleResult.length === 0) {
+        throw new InternalServerErrorException('Member role is not configured');
+      }
+
+      await manager.query(
+        `INSERT INTO member_roles (member_id, role_id) VALUES ($1, $2)`,
+        [savedUser.userId, roleResult[0].role_id],
+      );
+
+      // =================================================
       // 15. Remove password hash
       // =================================================
 
@@ -262,6 +357,198 @@ export class MembersService {
 
           phoneStatus: savedPhone.phoneStatus,
         },
+
+        additionalPhones: savedAdditionalPhones,
+      };
+    });
+  }
+
+  async getProfile(userId: number) {
+    const user = await this.dataSource.manager.findOne(User, {
+      where: { userId },
+      relations: { phoneNumbers: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Member not found');
+    }
+
+    const { passwordHash: _passwordHash, ...safeUser } = user;
+
+    return safeUser;
+  }
+
+  async updateProfile(userId: number, data: UpdateProfileDto) {
+    const region = data.region.trim();
+
+    const district = data.district?.trim() || null;
+
+    const dateOfBirth = data.dateOfBirth ? new Date(data.dateOfBirth) : null;
+
+    const user = await this.dataSource.manager.findOne(User, {
+      where: { userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Member not found');
+    }
+
+    user.gender = data.gender;
+    user.dateOfBirth = dateOfBirth;
+    user.region = region;
+    user.district = district;
+
+    const savedUser = await this.dataSource.manager.save(User, user);
+
+    const { passwordHash: _passwordHash, ...safeUser } = savedUser;
+
+    return safeUser;
+  }
+
+  async listTelecomOperators() {
+    return this.dataSource.manager.query<TelecomOperator[]>(
+      `
+      SELECT operator_id, operator_name
+      FROM telecom_operators
+      WHERE status = 'Active'
+      ORDER BY operator_name
+      `,
+    );
+  }
+
+  async listBanks() {
+    return this.dataSource.manager.query<Bank[]>(
+      `
+      SELECT bank_id, bank_name
+      FROM banks
+      WHERE status = 'Active'
+      ORDER BY bank_name
+      `,
+    );
+  }
+
+  async addPhoneNumber(userId: number, data: AddPhoneNumberDto) {
+    const phoneNumber = this.normalizeTanzanianPhone(data.phoneNumber);
+
+    const accountNumber = data.accountNumber?.trim() || null;
+
+    return this.dataSource.transaction(async (manager) => {
+      const existingPhone = await manager.findOne(PhoneNumber, {
+        where: {
+          phoneNumber,
+        },
+      });
+
+      if (existingPhone) {
+        throw new ConflictException('Phone number is already registered');
+      }
+
+      const prefix = phoneNumber.substring(0, 3);
+
+      const operator = await this.findActiveOperatorForPrefix(manager, prefix);
+
+      if (operator.operator_id !== data.operatorId) {
+        throw new BadRequestException(
+          'Selected network does not match this phone number',
+        );
+      }
+
+      const phone = manager.create(PhoneNumber, {
+        userId,
+
+        operatorId: operator.operator_id,
+
+        phoneNumber,
+
+        accountNumber,
+
+        isPrimary: false,
+
+        phoneStatus: 'Active',
+      });
+
+      const savedPhone = await manager.save(PhoneNumber, phone);
+
+      return {
+        phoneId: savedPhone.phoneId,
+
+        phoneNumber: savedPhone.phoneNumber,
+
+        accountNumber: savedPhone.accountNumber,
+
+        operatorId: savedPhone.operatorId,
+
+        operatorName: operator.operator_name,
+
+        isPrimary: savedPhone.isPrimary,
+
+        phoneStatus: savedPhone.phoneStatus,
+      };
+    });
+  }
+
+  async addBankAccount(userId: number, data: AddBankAccountDto) {
+    const accountNumber = data.accountNumber.trim();
+
+    return this.dataSource.transaction(async (manager) => {
+      const existingAccount = await manager.findOne(MemberBankAccount, {
+        where: { accountNumber },
+      });
+
+      if (existingAccount) {
+        throw new ConflictException(
+          'Bank account number is already registered',
+        );
+      }
+
+      const bank = await this.findActiveBank(manager, data.bankId);
+
+      const user = await manager.findOne(User, { where: { userId } });
+
+      if (!user) {
+        throw new NotFoundException('Member not found');
+      }
+
+      const existingAccountsCount = await manager.count(MemberBankAccount, {
+        where: { memberId: userId },
+      });
+
+      const accountHolderName =
+        data.accountHolderName?.trim() ||
+        [user.firstName, user.secondName, user.surname]
+          .filter(Boolean)
+          .join(' ');
+
+      const bankAccount = manager.create(MemberBankAccount, {
+        memberId: userId,
+
+        bankId: bank.bank_id,
+
+        accountNumber,
+
+        accountHolderName,
+
+        accountType: data.accountType,
+
+        accountStatus: 'Pending',
+
+        verificationStatus: 'Pending',
+
+        isPrimary: existingAccountsCount === 0,
+      });
+
+      const saved = await manager.save(MemberBankAccount, bankAccount);
+
+      return {
+        memberBankAccountId: saved.memberBankAccountId,
+        bankId: saved.bankId,
+        bankName: bank.bank_name,
+        accountNumber: saved.accountNumber,
+        accountHolderName: saved.accountHolderName,
+        accountType: saved.accountType,
+        isPrimary: saved.isPrimary,
+        accountStatus: saved.accountStatus,
+        verificationStatus: saved.verificationStatus,
       };
     });
   }

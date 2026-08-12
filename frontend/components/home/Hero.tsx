@@ -53,7 +53,7 @@ export default function Hero() {
                 hover:bg-green-800
                 transition"
               >
-              Become a member
+              Register
               </Link>
 
 

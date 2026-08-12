@@ -1,10 +1,30 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+interface TelecomOperator {
+  operator_id: number;
+  operator_name: string;
+}
+
+interface AdditionalPhoneEntry {
+  operatorId: string;
+  phoneNumber: string;
+}
+
+const inputClass =
+  "w-full rounded-lg border border-gray-300 px-4 py-3 " +
+  "text-gray-900 outline-none transition " +
+  "focus:border-green-700 focus:ring-2 focus:ring-green-200";
 
 export default function RegisterForm() {
+  const router = useRouter();
+
+  const [operators, setOperators] = useState<TelecomOperator[]>([]);
+
   const [formData, setFormData] = useState({
     firstName: "",
     secondName: "",
@@ -16,11 +36,37 @@ export default function RegisterForm() {
     confirmPassword: "",
   });
 
+  const [additionalPhones, setAdditionalPhones] = useState<
+    AdditionalPhoneEntry[]
+  >([]);
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  useEffect(() => {
+    const loadOperators = async () => {
+      try {
+        const response = await fetch(
+          "http://localhost:3002/members/telecom-operators"
+        );
+
+        if (response.ok) {
+          setOperators(await response.json());
+        }
+      } catch {
+        // Network selection is only needed once the user adds an
+        // extra phone number — fail silently here and let that
+        // optional section simply have an empty dropdown.
+      }
+    };
+
+    loadOperators();
+  }, []);
+
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
     const { name, value } = e.target;
 
     setFormData((previousData) => ({
@@ -32,6 +78,42 @@ export default function RegisterForm() {
     setSuccess("");
   };
 
+  // =====================================================
+  // Additional phone numbers — the "+ Add another" control only
+  // appears once the primary number is filled, and once every prior
+  // entry has both its number and network filled in, so numbers are
+  // completed in sequence rather than all at once.
+  // =====================================================
+
+  const canAddPhone =
+    formData.phoneNumber.trim().length > 0 &&
+    additionalPhones.every(
+      (entry) => entry.phoneNumber.trim().length > 0 && entry.operatorId
+    );
+
+  const addPhoneEntry = () => {
+    setAdditionalPhones((previous) => [
+      ...previous,
+      { operatorId: "", phoneNumber: "" },
+    ]);
+  };
+
+  const updatePhoneEntry = (
+    index: number,
+    field: keyof AdditionalPhoneEntry,
+    value: string
+  ) => {
+    setAdditionalPhones((previous) =>
+      previous.map((entry, i) =>
+        i === index ? { ...entry, [field]: value } : entry
+      )
+    );
+  };
+
+  const removePhoneEntry = (index: number) => {
+    setAdditionalPhones((previous) => previous.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async (
     e: React.FormEvent<HTMLFormElement>
   ) => {
@@ -40,13 +122,11 @@ export default function RegisterForm() {
     setError("");
     setSuccess("");
 
-    // Check password
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
 
-    // Check password length
     if (formData.password.length < 8) {
       setError("Password must be at least 8 characters.");
       return;
@@ -67,6 +147,10 @@ export default function RegisterForm() {
             secondName: formData.secondName || undefined,
             surname: formData.surname,
             phoneNumber: formData.phoneNumber,
+            additionalPhoneNumbers: additionalPhones.map((entry) => ({
+              operatorId: Number(entry.operatorId),
+              phoneNumber: entry.phoneNumber,
+            })),
             nidaNumber: formData.nidaNumber,
             email: formData.email || undefined,
             password: formData.password,
@@ -83,7 +167,7 @@ export default function RegisterForm() {
       }
 
       setSuccess(
-        "Registration successful. Your Tujitunze account has been created."
+        "Registration successful. Redirecting you to login..."
       );
 
       setFormData({
@@ -96,6 +180,12 @@ export default function RegisterForm() {
         password: "",
         confirmPassword: "",
       });
+
+      setAdditionalPhones([]);
+
+      setTimeout(() => {
+        router.push("/login");
+      }, 1500);
     } catch (error) {
       if (error instanceof Error) {
         setError(error.message);
@@ -133,7 +223,7 @@ export default function RegisterForm() {
             </div>
 
             <h1 className="text-3xl font-bold text-gray-900">
-              Become a Member
+              Register
             </h1>
 
             <p className="mt-2 text-gray-600">
@@ -180,9 +270,7 @@ export default function RegisterForm() {
                 placeholder="Enter your first name"
                 required
                 autoComplete="given-name"
-                className="w-full rounded-lg border border-gray-300 px-4 py-3
-                text-gray-900 outline-none transition
-                focus:border-green-700 focus:ring-2 focus:ring-green-200"
+                className={inputClass}
               />
             </div>
 
@@ -206,9 +294,7 @@ export default function RegisterForm() {
                 onChange={handleChange}
                 placeholder="Enter your second name"
                 autoComplete="additional-name"
-                className="w-full rounded-lg border border-gray-300 px-4 py-3
-                text-gray-900 outline-none transition
-                focus:border-green-700 focus:ring-2 focus:ring-green-200"
+                className={inputClass}
               />
             </div>
 
@@ -230,13 +316,11 @@ export default function RegisterForm() {
                 placeholder="Enter your surname"
                 required
                 autoComplete="family-name"
-                className="w-full rounded-lg border border-gray-300 px-4 py-3
-                text-gray-900 outline-none transition
-                focus:border-green-700 focus:ring-2 focus:ring-green-200"
+                className={inputClass}
               />
             </div>
 
-            {/* Phone */}
+            {/* Primary Phone */}
             <div>
               <label
                 htmlFor="phoneNumber"
@@ -254,11 +338,94 @@ export default function RegisterForm() {
                 placeholder="0626881149"
                 required
                 autoComplete="tel"
-                className="w-full rounded-lg border border-gray-300 px-4 py-3
-                text-gray-900 outline-none transition
-                focus:border-green-700 focus:ring-2 focus:ring-green-200"
+                className={inputClass}
               />
             </div>
+
+            {/* Additional Phone Numbers */}
+            {additionalPhones.map((entry, index) => (
+              <div
+                key={index}
+                className="rounded-lg border border-gray-200 p-4 space-y-4"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-gray-700">
+                    Phone Number {index + 2}
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => removePhoneEntry(index)}
+                    className="text-xs font-medium text-red-600 hover:text-red-700"
+                  >
+                    Remove
+                  </button>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor={`phone-${index}-operator`}
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Network
+                  </label>
+
+                  <select
+                    id={`phone-${index}-operator`}
+                    value={entry.operatorId}
+                    onChange={(e) =>
+                      updatePhoneEntry(index, "operatorId", e.target.value)
+                    }
+                    required
+                    className={inputClass}
+                  >
+                    <option value="" disabled>
+                      Select network
+                    </option>
+
+                    {operators.map((operator) => (
+                      <option
+                        key={operator.operator_id}
+                        value={operator.operator_id}
+                      >
+                        {operator.operator_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor={`phone-${index}-number`}
+                    className="mb-2 block text-sm font-semibold text-gray-700"
+                  >
+                    Phone Number
+                  </label>
+
+                  <input
+                    id={`phone-${index}-number`}
+                    type="tel"
+                    value={entry.phoneNumber}
+                    onChange={(e) =>
+                      updatePhoneEntry(index, "phoneNumber", e.target.value)
+                    }
+                    placeholder="0626881149"
+                    required
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+            ))}
+
+            {canAddPhone && (
+              <button
+                type="button"
+                onClick={addPhoneEntry}
+                className="text-sm font-semibold text-green-700 hover:text-green-800"
+              >
+                + Add another phone number
+              </button>
+            )}
 
             {/* NIDA */}
             <div>
@@ -277,9 +444,7 @@ export default function RegisterForm() {
                 onChange={handleChange}
                 placeholder="Enter your NIDA number"
                 required
-                className="w-full rounded-lg border border-gray-300 px-4 py-3
-                text-gray-900 outline-none transition
-                focus:border-green-700 focus:ring-2 focus:ring-green-200"
+                className={inputClass}
               />
 
               <p className="mt-1 text-xs text-gray-500">
@@ -307,9 +472,7 @@ export default function RegisterForm() {
                 onChange={handleChange}
                 placeholder="example@email.com"
                 autoComplete="email"
-                className="w-full rounded-lg border border-gray-300 px-4 py-3
-                text-gray-900 outline-none transition
-                focus:border-green-700 focus:ring-2 focus:ring-green-200"
+                className={inputClass}
               />
             </div>
 
@@ -332,9 +495,7 @@ export default function RegisterForm() {
                 required
                 minLength={8}
                 autoComplete="new-password"
-                className="w-full rounded-lg border border-gray-300 px-4 py-3
-                text-gray-900 outline-none transition
-                focus:border-green-700 focus:ring-2 focus:ring-green-200"
+                className={inputClass}
               />
 
               <p className="mt-1 text-xs text-gray-500">
@@ -361,9 +522,7 @@ export default function RegisterForm() {
                 required
                 minLength={8}
                 autoComplete="new-password"
-                className="w-full rounded-lg border border-gray-300 px-4 py-3
-                text-gray-900 outline-none transition
-                focus:border-green-700 focus:ring-2 focus:ring-green-200"
+                className={inputClass}
               />
             </div>
 
@@ -431,4 +590,3 @@ export default function RegisterForm() {
     </div>
   );
 }
-

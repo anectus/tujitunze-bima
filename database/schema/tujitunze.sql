@@ -30,7 +30,9 @@ CREATE TABLE users (
 
     address TEXT,
     region VARCHAR(100),
-    district VARCHAR(100),
+    district VARCHAR(1
+    
+    00),
 
     password_hash TEXT NOT NULL,
 
@@ -76,6 +78,45 @@ CREATE TABLE member_roles (
     assigned_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     UNIQUE(member_id, role_id)
+);
+
+
+-- ============================================================
+-- 3b. PERMISSIONS
+-- ============================================================
+-- Coarse, resource-scoped permission catalog (one permission per
+-- feature area, not per CRUD verb). Granted to roles via
+-- role_permissions below and carried in the JWT alongside role
+-- names so guards can check either.
+
+CREATE TABLE permissions (
+    permission_id SERIAL PRIMARY KEY,
+
+    permission_name VARCHAR(100) UNIQUE NOT NULL,
+    description TEXT,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- ============================================================
+-- 3c. ROLE PERMISSIONS
+-- ============================================================
+
+CREATE TABLE role_permissions (
+    role_permission_id SERIAL PRIMARY KEY,
+
+    role_id INT NOT NULL
+        REFERENCES roles(role_id)
+        ON DELETE CASCADE,
+
+    permission_id INT NOT NULL
+        REFERENCES permissions(permission_id)
+        ON DELETE CASCADE,
+
+    assigned_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(role_id, permission_id)
 );
 
 
@@ -143,6 +184,8 @@ CREATE TABLE phone_numbers (
         REFERENCES telecom_operators(operator_id),
 
     phone_number VARCHAR(20) UNIQUE NOT NULL,
+
+    account_number VARCHAR(50),
 
     is_primary BOOLEAN NOT NULL DEFAULT FALSE,
 
@@ -771,6 +814,9 @@ ON audit_logs(member_id);
 CREATE INDEX idx_audit_logs_date
 ON audit_logs(created_at);
 
+CREATE INDEX idx_role_permissions_role
+ON role_permissions(role_id);
+
 
 -- ============================================================
 -- 29. INITIAL ROLES
@@ -783,7 +829,140 @@ VALUES
     ('Hospital', 'Authorized healthcare provider'),
     ('Insurance', 'Insurance provider user'),
     ('Bank', 'Authorized bank integration user'),
-    ('Telecom', 'Authorized telecom operator user');
+    ('Telecom', 'Authorized telecom operator user'),
+    ('Super-admin', 'Platform owner/operator: system-wide configuration, managing other Admins, integrations');
+
+
+-- ============================================================
+-- 29b. INITIAL PERMISSIONS
+-- ============================================================
+-- One permission per feature area from each role's route group
+-- (see CLAUDE.md roles table). Kept resource-scoped rather than
+-- per-verb so the catalog stays small; split a permission into
+-- finer verbs only when a real access-control need shows up.
+
+INSERT INTO permissions (permission_name, description)
+VALUES
+    -- Member (own data only — enforced by ownership checks in the
+    -- service layer, not by these permissions)
+    ('profile:manage', 'View and edit own profile'),
+    ('wallet:manage', 'Manage own health savings wallet'),
+    ('member-telecom:manage', 'Link/manage own telecom contribution accounts'),
+    ('member-insurance:view', 'View own insurance policies and claims'),
+    ('member-hospitals:view', 'Browse partner hospitals'),
+    ('notifications:manage', 'View and manage own notifications'),
+    ('qr:view', 'View own QR identity code'),
+    ('onboarding:manage', 'Complete own onboarding flow'),
+
+    -- Admin
+    ('members:manage', 'Manage member accounts platform-wide'),
+    ('claims:manage', 'Manage healthcare claims platform-wide'),
+    ('transactions:manage', 'Manage wallet/bank/telecom transactions platform-wide'),
+    ('partner-hospitals:manage', 'Manage partner hospital records'),
+    ('partner-banks:manage', 'Manage partner bank records'),
+    ('partner-telecoms:manage', 'Manage partner telecom operator records'),
+
+    -- Hospital (own hospital only — enforced by tenant scoping in
+    -- the service layer)
+    ('patients:manage', 'Manage own hospital patient records'),
+    ('billing:manage', 'Manage own hospital billing'),
+    ('appointments:manage', 'Manage own hospital appointments'),
+    ('hospital-staff:manage', 'Manage own hospital staff accounts'),
+
+    -- Insurance
+    ('plans:manage', 'Manage own insurance plans'),
+    ('claims:review', 'Review claims routed to own insurance provider'),
+
+    -- Bank (own bank only)
+    ('accounts:manage', 'Manage own bank linked accounts'),
+    ('customers:manage', 'Manage own tenant customer records (bank/telecom)'),
+    ('transfers:manage', 'Manage own bank transfers'),
+    ('reconciliation:manage', 'Run reconciliation for own tenant (bank/telecom)'),
+
+    -- Telecom (own operator only)
+    ('payments:manage', 'Manage own telecom operator contribution payments'),
+    ('telecom-dashboard:view', 'View own telecom operator dashboard'),
+
+    -- Cross-role
+    ('reports:view', 'View reports scoped to own role/tenant'),
+    ('settings:manage', 'Manage settings scoped to own role/tenant'),
+    ('audit-logs:view', 'View audit log entries'),
+
+    -- Super-admin
+    ('administrators:manage', 'Assign/revoke roles for internal staff accounts'),
+    ('roles:manage', 'View roles and their permissions'),
+    ('permissions:manage', 'Assign/revoke permissions on roles'),
+    ('integrations:manage', 'Manage third-party integrations'),
+    ('system:manage', 'Manage system-wide configuration');
+
+
+-- ============================================================
+-- 29c. INITIAL ROLE PERMISSIONS
+-- ============================================================
+
+INSERT INTO role_permissions (role_id, permission_id)
+SELECT r.role_id, p.permission_id
+FROM (VALUES
+    ('Member', 'profile:manage'),
+    ('Member', 'wallet:manage'),
+    ('Member', 'member-telecom:manage'),
+    ('Member', 'member-insurance:view'),
+    ('Member', 'member-hospitals:view'),
+    ('Member', 'reports:view'),
+    ('Member', 'notifications:manage'),
+    ('Member', 'settings:manage'),
+    ('Member', 'qr:view'),
+    ('Member', 'onboarding:manage'),
+
+    ('Admin', 'members:manage'),
+    ('Admin', 'claims:manage'),
+    ('Admin', 'transactions:manage'),
+    ('Admin', 'partner-hospitals:manage'),
+    ('Admin', 'partner-banks:manage'),
+    ('Admin', 'partner-telecoms:manage'),
+    ('Admin', 'reports:view'),
+    ('Admin', 'audit-logs:view'),
+    ('Admin', 'settings:manage'),
+
+    ('Hospital', 'patients:manage'),
+    ('Hospital', 'claims:manage'),
+    ('Hospital', 'billing:manage'),
+    ('Hospital', 'appointments:manage'),
+    ('Hospital', 'hospital-staff:manage'),
+    ('Hospital', 'reports:view'),
+    ('Hospital', 'settings:manage'),
+
+    ('Insurance', 'plans:manage'),
+    ('Insurance', 'claims:review'),
+    ('Insurance', 'reports:view'),
+    ('Insurance', 'settings:manage'),
+
+    ('Bank', 'accounts:manage'),
+    ('Bank', 'customers:manage'),
+    ('Bank', 'transactions:manage'),
+    ('Bank', 'transfers:manage'),
+    ('Bank', 'reconciliation:manage'),
+    ('Bank', 'reports:view'),
+    ('Bank', 'settings:manage'),
+
+    ('Telecom', 'customers:manage'),
+    ('Telecom', 'transactions:manage'),
+    ('Telecom', 'payments:manage'),
+    ('Telecom', 'reconciliation:manage'),
+    ('Telecom', 'reports:view'),
+    ('Telecom', 'telecom-dashboard:view'),
+    ('Telecom', 'settings:manage'),
+
+    ('Super-admin', 'administrators:manage'),
+    ('Super-admin', 'roles:manage'),
+    ('Super-admin', 'permissions:manage'),
+    ('Super-admin', 'integrations:manage'),
+    ('Super-admin', 'system:manage'),
+    ('Super-admin', 'audit-logs:view'),
+    ('Super-admin', 'settings:manage')
+) AS seed(role_name, permission_name)
+JOIN roles r ON r.role_name = seed.role_name
+JOIN permissions p ON p.permission_name = seed.permission_name;
 
 
 -- ============================================================

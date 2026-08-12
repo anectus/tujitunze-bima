@@ -86,7 +86,7 @@ export default function Header() {
             hover:bg-green-800
             transition"
           >
-           Become a member
+           Register
           </Link>
 
         </div>

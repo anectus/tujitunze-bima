@@ -3,8 +3,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+import { ACCESS_TOKEN_STORAGE_KEY } from "@/lib/utils/permissions";
 
 export default function LoginForm() {
+  const router = useRouter();
+
   const [formData, setFormData] = useState({
     identifier: "",
     password: "",
@@ -62,11 +67,9 @@ export default function LoginForm() {
 
       setSuccess("Login successful.");
 
-      console.log("Login response:", data);
+      localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, data.accessToken);
 
-      // Later we will redirect the user to the dashboard here.
-      // Example:
-      // window.location.href = "/dashboard";
+      router.push("/onboarding/mobile-money");
 
     } catch (error) {
       if (error instanceof Error) {
@@ -274,7 +277,7 @@ export default function LoginForm() {
                 href="/register"
                 className="font-semibold text-green-700 hover:text-green-800 hover:underline"
               >
-                Become a member
+                Register
               </Link>
 
             </p>
