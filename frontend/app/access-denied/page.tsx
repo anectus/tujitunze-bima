@@ -1,14 +1,14 @@
 import Link from "next/link";
 
-import Header from "@/components/home/Header";
-import Footer from "@/components/home/Footer";
+import Header from "@/components/common/Header";
+import Footer from "@/components/common/Footer";
 
 export default function AccessDeniedPage() {
   return (
     <>
       <Header />
 
-      <div className="min-h-screen bg-gray-50 py-12 px-4">
+      <div className="min-h-screen bg-white py-12 px-4">
         <div className="max-w-md mx-auto text-center">
 
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
@@ -25,8 +25,8 @@ export default function AccessDeniedPage() {
 
           <Link
             href="/login"
-            className="mt-8 inline-block rounded-lg bg-green-700 px-6 py-3
-            font-semibold text-white transition hover:bg-green-800"
+            className="mt-8 inline-block rounded-lg bg-blue-700 px-6 py-3
+            font-semibold text-white transition hover:bg-blue-800"
           >
             Back to Login
           </Link>

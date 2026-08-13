@@ -3,8 +3,12 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { databaseConfig } from './config/database.config';
-import { MembersModule } from './members/members.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
+import { ContactModule } from './modules/contact/contact.module';
+import { MembersModule } from './modules/members/members.module';
+import { WalletsModule } from './modules/wallets/wallets.module';
 
 @Module({
   imports: [
@@ -19,6 +23,14 @@ import { AuthModule } from './modules/auth/auth.module';
     MembersModule,
 
     AuthModule,
+
+    AdminModule,
+
+    AuditLogsModule,
+
+    ContactModule,
+
+    WalletsModule,
   ],
 })
 export class AppModule {}

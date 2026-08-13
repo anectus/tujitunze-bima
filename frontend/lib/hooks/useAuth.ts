@@ -12,6 +12,7 @@ import {
 interface AuthState {
   userId: number | null;
   roles: string[];
+  firstName: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
 }
@@ -20,6 +21,7 @@ export function useAuth(): AuthState & { logout: () => void } {
   const [state, setState] = useState<AuthState>({
     userId: null,
     roles: [],
+    firstName: null,
     isAuthenticated: false,
     isLoading: true,
   });
@@ -32,6 +34,7 @@ export function useAuth(): AuthState & { logout: () => void } {
       setState({
         userId: null,
         roles: [],
+        firstName: null,
         isAuthenticated: false,
         isLoading: false,
       });
@@ -41,6 +44,7 @@ export function useAuth(): AuthState & { logout: () => void } {
     setState({
       userId: payload.sub,
       roles: payload.roles,
+      firstName: payload.firstName,
       isAuthenticated: true,
       isLoading: false,
     });
@@ -51,6 +55,7 @@ export function useAuth(): AuthState & { logout: () => void } {
     setState({
       userId: null,
       roles: [],
+      firstName: null,
       isAuthenticated: false,
       isLoading: false,
     });

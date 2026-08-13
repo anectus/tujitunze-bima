@@ -5,7 +5,7 @@ const services = [
   {
     title: "Health Savings Wallet",
     description:
-      "A secure digital wallet that stores individual healthcare savings and allows members to monitor their available health funds.",
+      "Built for the mtu wa kawaida — save small amounts daily straight from mobile money, no bank account needed. One button to top up, one screen to check your balance.",
     icon: "💳",
     link: "/wallet",
   },
@@ -13,7 +13,7 @@ const services = [
   {
     title: "Telecom Contributions",
     description:
-      "Enables members to contribute through mobile networks such as Vodacom, Airtel, Tigo, Halotel, and TTCL.",
+      "Enables members to contribute through mobile networks such as Vodacom, Airtel, Yas Money, Halotel, and TTCL.",
     icon: "📱",
     link: "/contributions",
   },
@@ -134,7 +134,7 @@ export default function Services() {
                 items-center
                 justify-center
                 rounded-xl
-                bg-green-100
+                bg-blue-100
                 text-3xl
                 mb-6
               ">
@@ -152,7 +152,7 @@ export default function Services() {
                 text-xl
                 font-bold
                 text-gray-900
-                group-hover:text-green-700
+                group-hover:text-blue-700
                 transition
               ">
 
@@ -185,9 +185,9 @@ export default function Services() {
                 className="
                   inline-block
                   mt-6
-                  text-green-700
+                  text-blue-700
                   font-semibold
-                  hover:text-green-900
+                  hover:text-blue-900
                 "
               >
 

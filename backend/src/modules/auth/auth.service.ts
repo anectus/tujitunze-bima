@@ -5,7 +5,7 @@ import { DataSource } from 'typeorm';
 
 import * as bcrypt from 'bcrypt';
 
-import { User } from '../../members/entities/user.entity';
+import { User } from '../members/entities/user.entity';
 import { LoginDto } from './dto/login.dto';
 
 @Injectable()
@@ -50,6 +50,7 @@ export class AuthService {
     const accessToken = await this.jwtService.signAsync({
       sub: user.userId,
       roles,
+      firstName: user.firstName,
     });
 
     const { passwordHash: _passwordHash, ...safeUser } = user;

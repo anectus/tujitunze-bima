@@ -1,2 +1,11 @@
 node_modules/
 .env
+
+# Reference/research images downloaded to the repo root while working
+# on tasks — not app assets, unreferenced by any code.
+th*.webp
+blog-img-*.png
+tujitunze.png
+BCO.*.png
+TANZANIA-MOBILE-JC*.png
+Eligibility+Verification*.webp

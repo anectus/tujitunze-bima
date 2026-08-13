@@ -23,16 +23,15 @@ CREATE TABLE users (
     surname VARCHAR(50) NOT NULL,
 
     email VARCHAR(100) UNIQUE,
-    nida_number VARCHAR(20) UNIQUE NOT NULL,
+    nida_number VARCHAR(23) UNIQUE NOT NULL -- 20 digits + 3 dashes, e.g. 20030707-35805-00002-26
+        CHECK (nida_number ~ '^[0-9]{8}-[0-9]{5}-[0-9]{5}-[0-9]{2}$'),
 
     gender VARCHAR(20),
     date_of_birth DATE,
 
     address TEXT,
     region VARCHAR(100),
-    district VARCHAR(1
-    
-    00),
+    district VARCHAR(100),
 
     password_hash TEXT NOT NULL,
 
@@ -183,7 +182,11 @@ CREATE TABLE phone_numbers (
     operator_id INT NOT NULL
         REFERENCES telecom_operators(operator_id),
 
-    phone_number VARCHAR(20) UNIQUE NOT NULL,
+    -- Stored in local format (0[67]XXXXXXXX), matching
+    -- MembersService.normalizeTanzanianPhone, which strips any
+    -- 255/+255 prefix before insert.
+    phone_number VARCHAR(20) UNIQUE NOT NULL
+        CHECK (phone_number ~ '^0[67][0-9]{8}$'),
 
     account_number VARCHAR(50),
 
@@ -254,6 +257,19 @@ CREATE TABLE bank_branches (
 -- ============================================================
 -- 9. BANK ACCOUNT PREFIXES
 -- ============================================================
+-- Intentionally left unseeded (unlike telecom_operator_prefixes).
+-- Unlike Tanzanian mobile numbers, which follow a single TCRA-
+-- regulated national numbering plan, Tanzanian bank account numbers
+-- have no shared national prefix registry — each bank sets its own
+-- internal format independently (verified 2026-08-13: CRDB's is
+-- ~14-character alphanumeric, NBC's is ~11-12 digits, NMB's is ~10-11
+-- digits, with no consistent leading-digit-to-bank mapping across
+-- them). A member's bank is therefore identified by having them pick
+-- it explicitly (AddBankAccountDto.bankId in
+-- backend/src/modules/members/dto/add-bank-account.dto.ts), not by
+-- inspecting the account_number. Only populate this table from a
+-- specific bank's own published branch/product-code documentation if
+-- a real integration needs it — never from a guessed pattern.
 
 CREATE TABLE bank_account_prefixes (
     prefix_id SERIAL PRIMARY KEY,
@@ -463,9 +479,9 @@ CREATE TABLE insurance_plans (
 
     description TEXT,
 
-    premium_amount DECIMAL(15,2),
+    premium_amount DECIMAL(10,2),
 
-    coverage_amount DECIMAL(15,2),
+    coverage_amount DECIMAL(10,2),
 
     duration_months INT,
 
@@ -754,6 +770,45 @@ CREATE TABLE system_settings (
 
 
 -- ============================================================
+-- 27a. CONTACT MESSAGES
+--
+-- Public "Send Us a Message" form (frontend Contact page). member_id is
+-- set when the sender was logged in at submit time — the sender's name
+-- and email are then taken from their verified account record, not from
+-- free-text form fields, so a logged-in sender only has to type the
+-- message itself. member_id is NULL for a guest sender, whose contact
+-- details are self-reported and unverified.
+-- ============================================================
+
+CREATE TABLE contact_messages (
+    contact_message_id SERIAL PRIMARY KEY,
+
+    member_id INT
+        REFERENCES users(user_id),
+
+    sender_name VARCHAR(150) NOT NULL,
+
+    sender_email VARCHAR(100) NOT NULL,
+
+    sender_phone VARCHAR(20),
+
+    nida_number VARCHAR(23),
+
+    category VARCHAR(50) NOT NULL,
+
+    subject VARCHAR(150) NOT NULL,
+
+    message TEXT NOT NULL,
+
+    status VARCHAR(30) NOT NULL DEFAULT 'New',
+
+    ip_address INET,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- ============================================================
 -- 28. PERFORMANCE INDEXES
 -- ============================================================
 
@@ -974,7 +1029,7 @@ INSERT INTO telecom_operators
 VALUES
     ('Vodacom', '255'),
     ('Airtel', '255'),
-    ('Tigo', '255'),
+    ('Yas Money', '255'),
     ('Halotel', '255'),
     ('TTCL', '255');
 
@@ -984,8 +1039,13 @@ VALUES
 -- ============================================================
 -- Maps Tanzanian mobile number prefixes to operators, used by
 -- registration to attribute a new phone number to its operator.
--- Prefixes below are a best-effort reference set and should be
--- verified/updated against the current TCRA numbering plan.
+-- Cross-checked 2026-08-13 against the current TCRA numbering plan
+-- (per Wikipedia's "Telephone numbers in Tanzania" and market-share
+-- reporting) — re-verify if TCRA reassigns prefixes going forward.
+-- Note: Halotel's 062 block is allocated but not yet operational as
+-- of this check; kept here since the app's phone regex already
+-- accepts it and rejecting a future-issued 062 number would be worse
+-- than an unused prefix row today.
 
 INSERT INTO telecom_operator_prefixes
     (operator_id, prefix, country_code, prefix_type)
@@ -993,9 +1053,11 @@ VALUES
     ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Vodacom'), '074', '255', 'Mobile'),
     ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Vodacom'), '075', '255', 'Mobile'),
     ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Vodacom'), '076', '255', 'Mobile'),
-    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Tigo'), '071', '255', 'Mobile'),
-    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Tigo'), '065', '255', 'Mobile'),
-    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Tigo'), '067', '255', 'Mobile'),
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Vodacom'), '079', '255', 'Mobile'),
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Yas Money'), '071', '255', 'Mobile'),
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Yas Money'), '065', '255', 'Mobile'),
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Yas Money'), '067', '255', 'Mobile'),
+    ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Yas Money'), '077', '255', 'Mobile'),
     ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Airtel'), '078', '255', 'Mobile'),
     ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Airtel'), '068', '255', 'Mobile'),
     ((SELECT operator_id FROM telecom_operators WHERE operator_name = 'Airtel'), '069', '255', 'Mobile'),
@@ -1008,20 +1070,26 @@ VALUES
 -- 31. INITIAL BANKS
 -- ============================================================
 -- These are initial records. They can be expanded later.
+-- swift_code values cross-checked 2026-08-13 against theswiftcodes.com
+-- and Wise's Tanzania SWIFT code registry (8-character head-office
+-- form; the widely-listed 11-character form just appends 'XXX' to
+-- denote the head office branch). "TPB Bank" is named "Tanzania
+-- Commercial Bank" (TCB) as of its 2020/2021 TIB merger and rebrand —
+-- it kept its legacy TAPBTZTZ code from its Tanzania Postal Bank days.
 
 INSERT INTO banks
-    (bank_name, bank_code, country_code)
+    (bank_name, bank_code, country_code, swift_code)
 VALUES
-    ('CRDB Bank', 'CRDB', '255'),
-    ('NMB Bank', 'NMB', '255'),
-    ('NBC Bank', 'NBC', '255'),
-    ('Absa Bank Tanzania', 'ABSA', '255'),
-    ('Stanbic Bank Tanzania', 'STANBIC', '255'),
-    ('Standard Chartered Bank Tanzania', 'SCB', '255'),
-    ('Exim Bank Tanzania', 'EXIM', '255'),
-    ('NCBA Bank Tanzania', 'NCBA', '255'),
-    ('TPB Bank', 'TPB', '255'),
-    ('KCB Bank Tanzania', 'KCB', '255');
+    ('CRDB Bank', 'CRDB', '255', 'CORUTZTZ'),
+    ('NMB Bank', 'NMB', '255', 'NMIBTZTZ'),
+    ('NBC Bank', 'NBC', '255', 'NLCBTZTX'),
+    ('Absa Bank Tanzania', 'ABSA', '255', 'BARCTZTZ'),
+    ('Stanbic Bank Tanzania', 'STANBIC', '255', 'SBICTZTX'),
+    ('Standard Chartered Bank Tanzania', 'SCB', '255', 'SCBLTZTX'),
+    ('Exim Bank Tanzania', 'EXIM', '255', 'EXTNTZTZ'),
+    ('NCBA Bank Tanzania', 'NCBA', '255', 'CBAFTZTZ'),
+    ('Tanzania Commercial Bank', 'TCB', '255', 'TAPBTZTZ'),
+    ('KCB Bank Tanzania', 'KCB', '255', 'KCBLTZTZ');
 
 
 -- ============================================================

@@ -1,15 +1,25 @@
-import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request } from 'express';
 
 import { MembersService } from './members.service';
 import { RegisterDto } from './dto/register.dto';
 import { AddPhoneNumberDto } from './dto/add-phone-number.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AddBankAccountDto } from './dto/add-bank-account.dto';
-import { CurrentUser } from '../modules/auth/decorators/current-user.decorator';
-import { Roles } from '../modules/auth/decorators/roles.decorator';
-import { JwtAuthGuard } from '../modules/auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../modules/auth/guards/roles.guard';
-import type { AuthenticatedUser } from '../modules/auth/jwt.strategy';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import type { AuthenticatedUser } from '../auth/jwt.strategy';
 
 @Controller('members')
 export class MembersController {
@@ -53,8 +63,9 @@ export class MembersController {
   async addPhoneNumber(
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: AddPhoneNumberDto,
+    @Req() request: Request,
   ) {
-    return this.membersService.addPhoneNumber(user.userId, body);
+    return this.membersService.addPhoneNumber(user.userId, body, request.ip);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -63,7 +74,19 @@ export class MembersController {
   async addBankAccount(
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: AddBankAccountDto,
+    @Req() request: Request,
   ) {
-    return this.membersService.addBankAccount(user.userId, body);
+    return this.membersService.addBankAccount(user.userId, body, request.ip);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Member')
+  @Patch('me/password')
+  async changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: ChangePasswordDto,
+    @Req() request: Request,
+  ) {
+    return this.membersService.changePassword(user.userId, body, request.ip);
   }
 }

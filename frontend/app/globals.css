@@ -12,12 +12,10 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* Background is intentionally fixed white on every page, regardless of
+   OS color-scheme preference — the app has no real dark-mode support, so
+   letting this vary by prefers-color-scheme would make the base
+   background silently different from page to page. */
 
 body {
   background: var(--background);

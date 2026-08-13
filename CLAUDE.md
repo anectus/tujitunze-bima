@@ -12,14 +12,20 @@ Source of truth: the `roles` table seed data in `database/schema/tujitunze.sql`
 and the route groups under `frontend/app/(*)`. Backend enforcement is
 `@Roles('RoleName')` + `RolesGuard` (`backend/src/modules/auth/guards/roles.guard.ts`)
 on top of `JwtAuthGuard` — a request must pass both to reach a role-scoped
-handler. As of 2026-08-12, **`Member` is the only role with real backend
-endpoints, and the only one actually enforced by `RolesGuard`**
-(`members.controller.ts`). Every other role below has no backend
-controller at all yet (`backend/src/modules/{admin,hospital,bank,telecom,
-insurance}` etc. are empty `@Module({})` stubs, not imported into
-`AppModule`) — there's nothing to guard on the backend until those modules
-get real endpoints, at which point they should copy the same
-`JwtAuthGuard` + `RolesGuard` + `@Roles(...)` pattern.
+handler. As of 2026-08-12, **`Member` and `Admin` are the only roles with
+real backend endpoints and `RolesGuard` enforcement**
+(`members.controller.ts`; `backend/src/modules/admin/` — members
+management via `admin.controller.ts` and hospital-directory management
+via `admin-hospitals.controller.ts`).
+Every other role still has no backend controller at all
+(`backend/src/modules/{bank,telecom,insurance}` etc. are empty
+`@Module({})` stubs, not imported into `AppModule`) — there's nothing to
+guard on the backend until those modules get real endpoints, at which
+point they should copy the same `JwtAuthGuard` + `RolesGuard` +
+`@Roles(...)` pattern the `admin` module now demonstrates. There is also
+no way yet to create an Admin account (registration always assigns
+`Member`) — an Admin row has to be inserted into `member_roles` by hand
+until Super-admin's "manage other Admins" capability exists.
 
 Each role's frontend route group (`app/(admin)`, `(hospital)`, `(bank)`,
 `(telecom)`, `(super-admin)`, `(member)`) does have a client-side gate now:
@@ -121,8 +127,13 @@ a default.
 
 Resolved since the original baseline: global `ValidationPipe`/DTOs are now
 wired in `main.ts`; login issues a real JWT (`auth.service.ts`); guards
-(`JwtAuthGuard`, `RolesGuard`) now protect role-scoped routes; and
-`backend/.env.example` lists required variables.
+(`JwtAuthGuard`, `RolesGuard`) now protect role-scoped routes;
+`backend/.env.example` lists required variables; and `audit_logs` is now a
+real entity/service (`backend/src/modules/audit-logs/`), written to
+atomically inside the same DB transaction as the write it's logging
+(`phone_number.add`, `bank_account.add`, `member.password_change`,
+`member.status_change`), with an Admin-only `GET /admin/audit-logs` to
+read it back.
 
 Still open, flagged so they aren't silently reintroduced or forgotten:
 
@@ -140,8 +151,21 @@ Still open, flagged so they aren't silently reintroduced or forgotten:
    are still empty stubs), so the token is exposed to XSS. Move to an
    httpOnly cookie once real session infra is built, before any non-local
    deployment.
-6. Writes to `phone_numbers` (including the new
-   `POST /members/phone-numbers`) aren't recorded in `audit_logs` —
-   `audit-logs.module.ts` is still an empty stub with no entity/service.
-   Financial/telecom-linking writes should get an audit trail before this
-   ships beyond a local machine.
+6. `audit_logs` coverage is partial — only the four write paths listed
+   above are instrumented. `POST /members/register` (account creation),
+   `PATCH /members/me` (profile updates), and any future
+   Hospital/Bank/Telecom/Insurance writes are not yet logged. Extend each
+   new sensitive write with `AuditLogsService.record(manager, …)` inside
+   its transaction as those land, rather than adding it as an afterthought.
+7. `AuditLogsService.list()` has no pagination or filtering — it returns
+   the latest 200 rows flat. Fine for local testing; needs pagination
+   (and probably filtering by member/action/date) before this is usable
+   at real volume.
+8. `POST /members/wallet/topup` (`backend/src/modules/wallets/`) credits
+   the wallet ledger directly — it does **not** capture a real mobile
+   money or bank debit. There is no live payment gateway integrated
+   (`telecom-contributions`/`bank-transactions` modules are still empty
+   stubs), so a top-up today is trusted, unauthenticated-by-a-third-party
+   ledger math, not a real funds movement. Treat this as the wallet's
+   internal accounting layer, not a payment feature, until a real
+   mobile-money/bank integration sits in front of it.

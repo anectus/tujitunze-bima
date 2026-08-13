@@ -3,6 +3,7 @@ export const ACCESS_TOKEN_STORAGE_KEY = "tujitunze_access_token";
 export interface AccessTokenPayload {
   sub: number;
   roles: string[];
+  firstName: string;
   iat: number;
   exp: number;
 }

@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function Hero() {
   return (
-    <section className="pt-32 pb-20 bg-gradient-to-br from-green-50 via-white to-green-100 px-12">
+    <section className="pt-32 pb-20 bg-gradient-to-br from-blue-50 via-white to-blue-100 px-12">
 
       <div className="max-w-7xl mx-auto px-6">
 
@@ -12,7 +12,7 @@ export default function Hero() {
           {/* Left Side - Main Content */}
           <div>
 
-            <span className="inline-block bg-green-100 text-green-700 px-4 py-2 rounded-full text-sm font-semibold mb-5">
+            <span className="inline-block bg-blue-100 text-blue-700 px-4 py-2 rounded-full text-sm font-semibold mb-5">
               Health Savings & Insurance Management System
             </span>
 
@@ -20,7 +20,7 @@ export default function Hero() {
             <h1 className="text-5xl md:text-6xl font-bold text-gray-900 leading-tight">
 
               Secure Your
-              <span className="text-green-700">
+              <span className="text-blue-700">
                 {" "}Healthcare Future
               </span>
 
@@ -44,16 +44,16 @@ export default function Hero() {
               <Link
                 href="/register"
                 className="
-                bg-green-700
+                bg-blue-700
                 text-white
                 px-8
                 py-3
                 rounded-lg
                 font-semibold
-                hover:bg-green-800
+                hover:bg-blue-800
                 transition"
               >
-              Register
+              Sign Up
               </Link>
 
 
@@ -61,13 +61,13 @@ export default function Hero() {
                 href="/login"
                 className="
                 border-2
-                border-green-700
-                text-green-700
+                border-blue-700
+                text-blue-700
                 px-8
                 py-3
                 rounded-lg
                 font-semibold
-                hover:bg-green-700
+                hover:bg-blue-700
                 hover:text-white
                 transition"
               >
@@ -108,8 +108,8 @@ export default function Hero() {
                 <div className="flex items-start gap-4">
 
                   <div className="
-                    bg-green-100
-                    text-green-700
+                    bg-blue-100
+                    text-blue-700
                     rounded-full
                     p-3
                   ">
@@ -122,7 +122,8 @@ export default function Hero() {
                     </h3>
 
                     <p className="text-gray-600 text-sm">
-                      Secure storage of individual healthcare savings.
+                      Save small amounts daily via mobile money — no bank
+                      account needed. Built for the mtu wa kawaida.
                     </p>
                   </div>
 
@@ -134,8 +135,8 @@ export default function Hero() {
                 <div className="flex items-start gap-4">
 
                   <div className="
-                    bg-green-100
-                    text-green-700
+                    bg-blue-100
+                    text-blue-700
                     rounded-full
                     p-3
                   ">
@@ -161,8 +162,8 @@ export default function Hero() {
                 <div className="flex items-start gap-4">
 
                   <div className="
-                    bg-green-100
-                    text-green-700
+                    bg-blue-100
+                    text-blue-700
                     rounded-full
                     p-3
                   ">
@@ -188,8 +189,8 @@ export default function Hero() {
                 <div className="flex items-start gap-4">
 
                   <div className="
-                    bg-green-100
-                    text-green-700
+                    bg-blue-100
+                    text-blue-700
                     rounded-full
                     p-3
                   ">

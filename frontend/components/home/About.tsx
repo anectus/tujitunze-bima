@@ -1,6 +1,6 @@
 export default function About() {
   return (
-    <section className="bg-gray-50 pt-36 pb-20 px-12">
+    <section className="bg-white pt-36 pb-20 px-12">
 
       <div className="max-w-7xl mx-auto px-6">
 
@@ -25,7 +25,7 @@ export default function About() {
 
         <div className="mt-20 bg-white rounded-2xl shadow-lg p-10">
 
-          <h2 className="text-3xl font-bold text-green-700">
+          <h2 className="text-3xl font-bold text-blue-700">
             What is Tujitunze?
           </h2>
 
@@ -53,7 +53,7 @@ export default function About() {
               🎯
             </div>
 
-            <h2 className="text-2xl font-bold text-green-700">
+            <h2 className="text-2xl font-bold text-blue-700">
               Our Mission
             </h2>
 
@@ -72,7 +72,7 @@ export default function About() {
               🌍
             </div>
 
-            <h2 className="text-2xl font-bold text-green-700">
+            <h2 className="text-2xl font-bold text-blue-700">
               Our Vision
             </h2>
 
@@ -90,7 +90,7 @@ export default function About() {
 
         <div className="mt-16 bg-white rounded-2xl shadow-lg p-10">
 
-          <h2 className="text-3xl font-bold text-green-700">
+          <h2 className="text-3xl font-bold text-blue-700">
             System Objectives
           </h2>
 
@@ -100,7 +100,7 @@ export default function About() {
 
               <li>✔ Provide secure healthcare savings.</li>
 
-              <li>✔ Support member registration using National ID.</li>
+              <li>✔ Support member registration using NIDA (National ID).</li>
 
               <li>✔ Verify active members before treatment.</li>
 
@@ -132,7 +132,7 @@ export default function About() {
 
         <div className="mt-16">
 
-          <h2 className="text-3xl font-bold text-center text-green-700">
+          <h2 className="text-3xl font-bold text-center text-blue-700">
             Our Core Values
           </h2>
 
@@ -208,7 +208,7 @@ export default function About() {
 
         {/* Closing */}
 
-        <div className="mt-20 bg-green-700 rounded-3xl p-12 text-center text-white">
+        <div className="mt-20 bg-blue-700 rounded-3xl p-12 text-center text-white">
 
           <h2 className="text-4xl font-bold">
             Building the Future of Digital Healthcare

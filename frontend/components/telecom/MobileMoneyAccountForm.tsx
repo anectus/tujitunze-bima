@@ -31,7 +31,7 @@ interface BankAccountEntry {
 const inputClass =
   "w-full rounded-lg border border-gray-300 px-4 py-3 " +
   "text-gray-900 outline-none transition " +
-  "focus:border-green-700 focus:ring-2 focus:ring-green-200";
+  "focus:border-blue-700 focus:ring-2 focus:ring-blue-200";
 
 const emptyEntry: MobileMoneyAccountEntry = {
   operatorId: "",
@@ -295,7 +295,7 @@ export default function MobileMoneyAccountForm() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4">
+    <div className="min-h-screen bg-white py-12 px-4">
 
       <div className="max-w-2xl mx-auto">
 
@@ -303,7 +303,7 @@ export default function MobileMoneyAccountForm() {
 
           <div className="text-center mb-8">
 
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100">
               <span className="text-3xl">📱</span>
             </div>
 
@@ -325,7 +325,7 @@ export default function MobileMoneyAccountForm() {
           )}
 
           {success && (
-            <div className="mb-6 rounded-lg bg-green-100 px-4 py-3 text-sm text-green-700">
+            <div className="mb-6 rounded-lg bg-blue-100 px-4 py-3 text-sm text-blue-700">
               {success}
             </div>
           )}
@@ -504,7 +504,7 @@ export default function MobileMoneyAccountForm() {
               <button
                 type="button"
                 onClick={addAccountEntry}
-                className="text-sm font-semibold text-green-700 hover:text-green-800"
+                className="text-sm font-semibold text-blue-700 hover:text-blue-800"
               >
                 + Add another mobile money account
               </button>
@@ -675,7 +675,7 @@ export default function MobileMoneyAccountForm() {
                 <button
                   type="button"
                   onClick={addBankAccountEntry}
-                  className="text-sm font-semibold text-green-700 hover:text-green-800"
+                  className="text-sm font-semibold text-blue-700 hover:text-blue-800"
                 >
                   + Add {bankAccounts.length > 0 ? "another" : "a"} bank account
                 </button>
@@ -685,9 +685,9 @@ export default function MobileMoneyAccountForm() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-lg bg-green-700 px-6 py-3.5
+              className="w-full rounded-lg bg-blue-700 px-6 py-3.5
               text-lg font-semibold text-white transition
-              hover:bg-green-800 disabled:cursor-not-allowed
+              hover:bg-blue-800 disabled:cursor-not-allowed
               disabled:opacity-60"
             >
               {loading ? "Saving..." : "Save and Continue"}

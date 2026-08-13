@@ -4,6 +4,7 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 
 import { DataSource, EntityManager } from 'typeorm';
@@ -17,6 +18,8 @@ import { RegisterDto } from './dto/register.dto';
 import { AddPhoneNumberDto } from './dto/add-phone-number.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AddBankAccountDto } from './dto/add-bank-account.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 
 interface TelecomOperator {
   operator_id: number;
@@ -30,7 +33,10 @@ interface Bank {
 
 @Injectable()
 export class MembersService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly auditLogsService: AuditLogsService,
+  ) {}
 
   // =====================================================
   // Normalize a Tanzanian phone number.
@@ -106,6 +112,27 @@ export class MembersService {
     return bankResult[0];
   }
 
+  private async findOperatorById(
+    manager: EntityManager,
+    operatorId: number,
+  ): Promise<TelecomOperator> {
+    const operatorResult = await manager.query<TelecomOperator[]>(
+      `
+      SELECT operator_id, operator_name
+      FROM telecom_operators
+      WHERE operator_id = $1
+      LIMIT 1
+      `,
+      [operatorId],
+    );
+
+    if (!operatorResult || operatorResult.length === 0) {
+      throw new BadRequestException('Selected network is not supported');
+    }
+
+    return operatorResult[0];
+  }
+
   async register(data: RegisterDto) {
     // =====================================================
     // 1. Field presence/shape is enforced by RegisterDto via the
@@ -129,24 +156,6 @@ export class MembersService {
 
     const phoneNumber = this.normalizeTanzanianPhone(data.phoneNumber);
 
-    const additionalPhoneNumbers = (data.additionalPhoneNumbers ?? []).map(
-      (entry) => ({
-        operatorId: entry.operatorId,
-        phoneNumber: this.normalizeTanzanianPhone(entry.phoneNumber),
-      }),
-    );
-
-    const allPhoneNumbers = [
-      phoneNumber,
-      ...additionalPhoneNumbers.map((entry) => entry.phoneNumber),
-    ];
-
-    if (new Set(allPhoneNumbers).size !== allPhoneNumbers.length) {
-      throw new BadRequestException(
-        'Each phone number can only be submitted once',
-      );
-    }
-
     // =====================================================
     // 4. Database transaction
     // =====================================================
@@ -157,7 +166,7 @@ export class MembersService {
       // =================================================
 
       const existingPhone = await manager.findOne(PhoneNumber, {
-        where: allPhoneNumbers.map((number) => ({ phoneNumber: number })),
+        where: { phoneNumber },
       });
 
       if (existingPhone) {
@@ -205,27 +214,6 @@ export class MembersService {
       // =================================================
 
       const operator = await this.findActiveOperatorForPrefix(manager, prefix);
-
-      // =================================================
-      // 9b. Resolve + validate additional phone numbers
-      // =================================================
-
-      const resolvedAdditionalPhones = await Promise.all(
-        additionalPhoneNumbers.map(async (entry) => {
-          const entryOperator = await this.findActiveOperatorForPrefix(
-            manager,
-            entry.phoneNumber.substring(0, 3),
-          );
-
-          if (entryOperator.operator_id !== entry.operatorId) {
-            throw new BadRequestException(
-              `Selected network does not match ${entry.phoneNumber}`,
-            );
-          }
-
-          return { ...entry, operator: entryOperator };
-        }),
-      );
 
       // =================================================
       // 10. Hash password
@@ -280,37 +268,6 @@ export class MembersService {
       const savedPhone = await manager.save(PhoneNumber, phone);
 
       // =================================================
-      // 13b. Save additional phone numbers
-      // =================================================
-
-      const savedAdditionalPhones = await Promise.all(
-        resolvedAdditionalPhones.map(async (entry) => {
-          const additionalPhone = manager.create(PhoneNumber, {
-            userId: savedUser.userId,
-
-            operatorId: entry.operator.operator_id,
-
-            phoneNumber: entry.phoneNumber,
-
-            isPrimary: false,
-
-            phoneStatus: 'Active',
-          });
-
-          const saved = await manager.save(PhoneNumber, additionalPhone);
-
-          return {
-            phoneId: saved.phoneId,
-            phoneNumber: saved.phoneNumber,
-            operatorId: saved.operatorId,
-            operatorName: entry.operator.operator_name,
-            isPrimary: saved.isPrimary,
-            phoneStatus: saved.phoneStatus,
-          };
-        }),
-      );
-
-      // =================================================
       // 14b. Assign the default 'Member' role
       // =================================================
 
@@ -357,8 +314,6 @@ export class MembersService {
 
           phoneStatus: savedPhone.phoneStatus,
         },
-
-        additionalPhones: savedAdditionalPhones,
       };
     });
   }
@@ -427,7 +382,11 @@ export class MembersService {
     );
   }
 
-  async addPhoneNumber(userId: number, data: AddPhoneNumberDto) {
+  async addPhoneNumber(
+    userId: number,
+    data: AddPhoneNumberDto,
+    ipAddress: string | null = null,
+  ) {
     const phoneNumber = this.normalizeTanzanianPhone(data.phoneNumber);
 
     const accountNumber = data.accountNumber?.trim() || null;
@@ -440,7 +399,28 @@ export class MembersService {
       });
 
       if (existingPhone) {
-        throw new ConflictException('Phone number is already registered');
+        if (existingPhone.userId !== userId) {
+          throw new ConflictException('Phone number is already registered');
+        }
+
+        // The member is re-submitting a number already on file for their
+        // own account — most commonly their registration phone number,
+        // entered again as a mobile money account on the membership form.
+        // Treat it as already linked instead of erroring.
+        const existingOperator = await this.findOperatorById(
+          manager,
+          existingPhone.operatorId,
+        );
+
+        return {
+          phoneId: existingPhone.phoneId,
+          phoneNumber: existingPhone.phoneNumber,
+          accountNumber: existingPhone.accountNumber,
+          operatorId: existingPhone.operatorId,
+          operatorName: existingOperator.operator_name,
+          isPrimary: existingPhone.isPrimary,
+          phoneStatus: existingPhone.phoneStatus,
+        };
       }
 
       const prefix = phoneNumber.substring(0, 3);
@@ -469,6 +449,18 @@ export class MembersService {
 
       const savedPhone = await manager.save(PhoneNumber, phone);
 
+      await this.auditLogsService.record(manager, {
+        memberId: userId,
+        actionType: 'phone_number.add',
+        affectedTable: 'phone_numbers',
+        affectedRecordId: savedPhone.phoneId,
+        newValue: {
+          phoneNumber: savedPhone.phoneNumber,
+          operatorId: savedPhone.operatorId,
+        },
+        ipAddress,
+      });
+
       return {
         phoneId: savedPhone.phoneId,
 
@@ -487,7 +479,11 @@ export class MembersService {
     });
   }
 
-  async addBankAccount(userId: number, data: AddBankAccountDto) {
+  async addBankAccount(
+    userId: number,
+    data: AddBankAccountDto,
+    ipAddress: string | null = null,
+  ) {
     const accountNumber = data.accountNumber.trim();
 
     return this.dataSource.transaction(async (manager) => {
@@ -539,6 +535,19 @@ export class MembersService {
 
       const saved = await manager.save(MemberBankAccount, bankAccount);
 
+      await this.auditLogsService.record(manager, {
+        memberId: userId,
+        actionType: 'bank_account.add',
+        affectedTable: 'member_bank_accounts',
+        affectedRecordId: saved.memberBankAccountId,
+        newValue: {
+          bankId: saved.bankId,
+          accountNumber: saved.accountNumber,
+          accountType: saved.accountType,
+        },
+        ipAddress,
+      });
+
       return {
         memberBankAccountId: saved.memberBankAccountId,
         bankId: saved.bankId,
@@ -550,6 +559,47 @@ export class MembersService {
         accountStatus: saved.accountStatus,
         verificationStatus: saved.verificationStatus,
       };
+    });
+  }
+
+  async changePassword(
+    userId: number,
+    data: ChangePasswordDto,
+    ipAddress: string | null = null,
+  ) {
+    return this.dataSource.transaction(async (manager) => {
+      const user = await manager.findOne(User, {
+        where: { userId },
+      });
+
+      if (!user) {
+        throw new NotFoundException('Member not found');
+      }
+
+      const currentPasswordMatches = await bcrypt.compare(
+        data.currentPassword,
+        user.passwordHash,
+      );
+
+      if (!currentPasswordMatches) {
+        throw new UnauthorizedException('Current password is incorrect');
+      }
+
+      user.passwordHash = await bcrypt.hash(data.newPassword, 12);
+
+      await manager.save(User, user);
+
+      // Never log password values (hash or plaintext) — the action itself
+      // is what matters for the audit trail.
+      await this.auditLogsService.record(manager, {
+        memberId: userId,
+        actionType: 'member.password_change',
+        affectedTable: 'users',
+        affectedRecordId: userId,
+        ipAddress,
+      });
+
+      return { message: 'Password changed successfully.' };
     });
   }
 }

@@ -35,7 +35,7 @@ export default function ProtectedRoute({
 
   if (isLoading || !isAuthenticated || !hasRole(roles, allowedRoles)) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+      <div className="flex min-h-screen items-center justify-center bg-white">
         <p className="text-gray-500">Checking access...</p>
       </div>
     );

@@ -50,7 +50,7 @@ export class User {
   @Column({
     name: 'nida_number',
     type: 'varchar',
-    length: 20,
+    length: 23, // 20 digits + 3 dashes, e.g. 20030707-35805-00002-26
     unique: true,
   })
   nidaNumber!: string;
