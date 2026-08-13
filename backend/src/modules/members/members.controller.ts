@@ -2,8 +2,10 @@ import {
   Body,
   Controller,
   Get,
+  ParseIntPipe,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -55,6 +57,16 @@ export class MembersController {
   @Get('banks')
   async banks() {
     return this.membersService.listBanks();
+  }
+
+  @Get('regions')
+  async regions() {
+    return this.membersService.listRegions();
+  }
+
+  @Get('districts')
+  async districts(@Query('regionId', ParseIntPipe) regionId: number) {
+    return this.membersService.listDistrictsByRegion(regionId);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

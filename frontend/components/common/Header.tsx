@@ -1,11 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/lib/hooks/useAuth";
 
 export default function Header() {
-  const { isAuthenticated, firstName } = useAuth();
+  const router = useRouter();
+  const { isAuthenticated, firstName, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    router.push("/login");
+  };
 
   return (
     <header className="bg-white shadow-md fixed top-0 left-0 w-full z-50">
@@ -128,6 +135,14 @@ export default function Header() {
                   >
                     Settings
                   </Link>
+
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 hover:text-blue-700"
+                  >
+                    Log Out
+                  </button>
 
                 </div>
 

@@ -46,6 +46,69 @@ CREATE TABLE users (
 
 
 -- ============================================================
+-- 1b. REGIONS
+-- ============================================================
+-- Tanzania's official administrative regions (mikoa), per TAMISEMI
+-- (President's Office - Regional Administration and Local Government,
+-- www.tamisemi.go.tz) and the National Bureau of Statistics. Verified
+-- 2026-08-13: 31 regions total — 26 on the mainland plus 5 in Zanzibar
+-- (Zanzibar's last split was Mjini Magharibi in 2016; the mainland's
+-- last was Songwe, also 2016). users.region/district stay free-text
+-- columns (unlike telecom_operators/banks, there's no region_id FK on
+-- users) but the backend validates both against this table and
+-- `districts` below on profile completion (PATCH /members/me) — see
+-- MembersService.findActiveRegion / findActiveDistrict in
+-- members.service.ts. Registration itself doesn't collect region.
+
+CREATE TABLE regions (
+    region_id SERIAL PRIMARY KEY,
+
+    region_name VARCHAR(100) UNIQUE NOT NULL,
+
+    area_type VARCHAR(20) NOT NULL DEFAULT 'Mainland'
+        CHECK (area_type IN ('Mainland', 'Zanzibar')),
+
+    status VARCHAR(20) NOT NULL DEFAULT 'Active',
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- ============================================================
+-- 1c. DISTRICTS
+-- ============================================================
+-- Tanzania's districts (wilaya), one row per district and FK'd to its
+-- region so the frontend can offer a region -> district dependent
+-- dropdown. This is a best-effort simplified mapping cross-referenced
+-- against Wikipedia's "Districts of Tanzania" (2026-08-13): official
+-- sources put the true count of Local Government Authorities at
+-- 167-184, because many districts are split into a separate
+-- urban/municipal/city council and rural district council that share
+-- a name (e.g. "Korogwe Urban" + "Korogwe District") — those pairs are
+-- merged into a single district row here rather than kept as two,
+-- since a member picking "my district" thinks in those terms, not
+-- LGA/council terms. Re-verify against www.tamisemi.go.tz before
+-- relying on this for anything beyond a member's self-reported
+-- address.
+
+CREATE TABLE districts (
+    district_id SERIAL PRIMARY KEY,
+
+    region_id INT NOT NULL
+        REFERENCES regions(region_id)
+        ON DELETE CASCADE,
+
+    district_name VARCHAR(100) NOT NULL,
+
+    status VARCHAR(20) NOT NULL DEFAULT 'Active',
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(region_id, district_name)
+);
+
+
+-- ============================================================
 -- 2. ROLES
 -- ============================================================
 
@@ -1016,8 +1079,257 @@ FROM (VALUES
     ('Super-admin', 'audit-logs:view'),
     ('Super-admin', 'settings:manage')
 ) AS seed(role_name, permission_name)
+
 JOIN roles r ON r.role_name = seed.role_name
 JOIN permissions p ON p.permission_name = seed.permission_name;
+
+
+-- ============================================================
+-- 29d. INITIAL REGIONS
+-- ============================================================
+-- Tanzania's 31 official regions per TAMISEMI, cross-checked
+-- 2026-08-13. Re-verify against www.tamisemi.go.tz if TAMISEMI
+-- gazettes further region splits.
+
+INSERT INTO regions
+    (region_name, area_type)
+VALUES
+    -- Mainland (26)
+    ('Arusha', 'Mainland'),
+    ('Dar es Salaam', 'Mainland'),
+    ('Dodoma', 'Mainland'),
+    ('Geita', 'Mainland'),
+    ('Iringa', 'Mainland'),
+    ('Kagera', 'Mainland'),
+    ('Katavi', 'Mainland'),
+    ('Kigoma', 'Mainland'),
+    ('Kilimanjaro', 'Mainland'),
+    ('Lindi', 'Mainland'),
+    ('Manyara', 'Mainland'),
+    ('Mara', 'Mainland'),
+    ('Mbeya', 'Mainland'),
+    ('Morogoro', 'Mainland'),
+    ('Mtwara', 'Mainland'),
+    ('Mwanza', 'Mainland'),
+    ('Njombe', 'Mainland'),
+    ('Pwani', 'Mainland'),
+    ('Rukwa', 'Mainland'),
+    ('Ruvuma', 'Mainland'),
+    ('Shinyanga', 'Mainland'),
+    ('Simiyu', 'Mainland'),
+    ('Singida', 'Mainland'),
+    ('Songwe', 'Mainland'),
+    ('Tabora', 'Mainland'),
+    ('Tanga', 'Mainland'),
+
+    -- Zanzibar (5)
+    ('Kaskazini Unguja', 'Zanzibar'),
+    ('Kusini Unguja', 'Zanzibar'),
+    ('Mjini Magharibi', 'Zanzibar'),
+    ('Kaskazini Pemba', 'Zanzibar'),
+    ('Kusini Pemba', 'Zanzibar');
+
+
+-- ============================================================
+-- 29e. INITIAL DISTRICTS
+-- ============================================================
+-- See the "1c. DISTRICTS" comment above for how urban/rural council
+-- pairs were merged into single district rows. Cross-checked
+-- 2026-08-13 against Wikipedia's "Districts of Tanzania" — re-verify
+-- against www.tamisemi.go.tz if this needs to be authoritative.
+
+INSERT INTO districts (region_id, district_name)
+SELECT r.region_id, d.district_name
+FROM (VALUES
+    ('Arusha', 'Arusha'),
+    ('Arusha', 'Karatu'),
+    ('Arusha', 'Longido'),
+    ('Arusha', 'Meru'),
+    ('Arusha', 'Monduli'),
+    ('Arusha', 'Ngorongoro'),
+
+    ('Dar es Salaam', 'Ilala'),
+    ('Dar es Salaam', 'Kigamboni'),
+    ('Dar es Salaam', 'Kinondoni'),
+    ('Dar es Salaam', 'Temeke'),
+    ('Dar es Salaam', 'Ubungo'),
+
+    ('Dodoma', 'Dodoma'),
+    ('Dodoma', 'Bahi'),
+    ('Dodoma', 'Chamwino'),
+    ('Dodoma', 'Chemba'),
+    ('Dodoma', 'Kondoa'),
+    ('Dodoma', 'Kongwa'),
+    ('Dodoma', 'Mpwapwa'),
+
+    ('Geita', 'Geita'),
+    ('Geita', 'Bukombe'),
+    ('Geita', 'Chato'),
+    ('Geita', 'Mbogwe'),
+    ('Geita', 'Nyang''hwale'),
+
+    ('Iringa', 'Iringa'),
+    ('Iringa', 'Mafinga'),
+    ('Iringa', 'Kilolo'),
+    ('Iringa', 'Mufindi'),
+
+    ('Kagera', 'Bukoba'),
+    ('Kagera', 'Biharamulo'),
+    ('Kagera', 'Karagwe'),
+    ('Kagera', 'Kyerwa'),
+    ('Kagera', 'Missenyi'),
+    ('Kagera', 'Muleba'),
+    ('Kagera', 'Ngara'),
+
+    ('Katavi', 'Mpanda'),
+    ('Katavi', 'Mlele'),
+    ('Katavi', 'Mpimbwe'),
+    ('Katavi', 'Nsimbo'),
+
+    ('Kigoma', 'Kigoma'),
+    ('Kigoma', 'Kasulu'),
+    ('Kigoma', 'Buhigwe'),
+    ('Kigoma', 'Kakonko'),
+    ('Kigoma', 'Kibondo'),
+    ('Kigoma', 'Uvinza'),
+
+    ('Kilimanjaro', 'Moshi'),
+    ('Kilimanjaro', 'Hai'),
+    ('Kilimanjaro', 'Mwanga'),
+    ('Kilimanjaro', 'Rombo'),
+    ('Kilimanjaro', 'Same'),
+    ('Kilimanjaro', 'Siha'),
+
+    ('Lindi', 'Lindi'),
+    ('Lindi', 'Kilwa'),
+    ('Lindi', 'Liwale'),
+    ('Lindi', 'Nachingwea'),
+    ('Lindi', 'Ruangwa'),
+
+    ('Manyara', 'Babati'),
+    ('Manyara', 'Hanang'),
+    ('Manyara', 'Kiteto'),
+    ('Manyara', 'Mbulu'),
+    ('Manyara', 'Simanjiro'),
+
+    ('Mara', 'Musoma'),
+    ('Mara', 'Bunda'),
+    ('Mara', 'Butiama'),
+    ('Mara', 'Rorya'),
+    ('Mara', 'Serengeti'),
+    ('Mara', 'Tarime'),
+
+    ('Mbeya', 'Mbeya'),
+    ('Mbeya', 'Busokelo'),
+    ('Mbeya', 'Chunya'),
+    ('Mbeya', 'Kyela'),
+    ('Mbeya', 'Mbarali'),
+    ('Mbeya', 'Rungwe'),
+
+    ('Morogoro', 'Morogoro'),
+    ('Morogoro', 'Ifakara'),
+    ('Morogoro', 'Gairo'),
+    ('Morogoro', 'Kilombero'),
+    ('Morogoro', 'Kilosa'),
+    ('Morogoro', 'Malinyi'),
+    ('Morogoro', 'Mvomero'),
+    ('Morogoro', 'Ulanga'),
+
+    ('Mtwara', 'Mtwara'),
+    ('Mtwara', 'Masasi'),
+    ('Mtwara', 'Nanyumbu'),
+    ('Mtwara', 'Newala'),
+    ('Mtwara', 'Tandahimba'),
+
+    ('Mwanza', 'Mwanza'),
+    ('Mwanza', 'Ilemela'),
+    ('Mwanza', 'Buchosa'),
+    ('Mwanza', 'Kwimba'),
+    ('Mwanza', 'Magu'),
+    ('Mwanza', 'Misungwi'),
+    ('Mwanza', 'Sengerema'),
+    ('Mwanza', 'Ukerewe'),
+
+    ('Njombe', 'Njombe'),
+    ('Njombe', 'Makambako'),
+    ('Njombe', 'Ludewa'),
+    ('Njombe', 'Makete'),
+    ('Njombe', 'Wanging''ombe'),
+
+    ('Pwani', 'Kibaha'),
+    ('Pwani', 'Bagamoyo'),
+    ('Pwani', 'Chalinze'),
+    ('Pwani', 'Kisarawe'),
+    ('Pwani', 'Mafia'),
+    ('Pwani', 'Mkuranga'),
+    ('Pwani', 'Rufiji'),
+
+    ('Rukwa', 'Sumbawanga'),
+    ('Rukwa', 'Kalambo'),
+    ('Rukwa', 'Nkasi'),
+
+    ('Ruvuma', 'Songea'),
+    ('Ruvuma', 'Mbinga'),
+    ('Ruvuma', 'Madaba'),
+    ('Ruvuma', 'Namtumbo'),
+    ('Ruvuma', 'Nyasa'),
+    ('Ruvuma', 'Tunduru'),
+
+    ('Shinyanga', 'Shinyanga'),
+    ('Shinyanga', 'Kahama'),
+    ('Shinyanga', 'Kishapu'),
+    ('Shinyanga', 'Msalala'),
+    ('Shinyanga', 'Ushetu'),
+
+    ('Simiyu', 'Bariadi'),
+    ('Simiyu', 'Busega'),
+    ('Simiyu', 'Itilima'),
+    ('Simiyu', 'Maswa'),
+    ('Simiyu', 'Meatu'),
+
+    ('Singida', 'Singida'),
+    ('Singida', 'Ikungi'),
+    ('Singida', 'Iramba'),
+    ('Singida', 'Itigi'),
+    ('Singida', 'Manyoni'),
+    ('Singida', 'Mkalama'),
+
+    ('Songwe', 'Songwe'),
+    ('Songwe', 'Tunduma'),
+    ('Songwe', 'Ileje'),
+    ('Songwe', 'Mbozi'),
+    ('Songwe', 'Momba'),
+
+    ('Tabora', 'Tabora'),
+    ('Tabora', 'Nzega'),
+    ('Tabora', 'Igunga'),
+    ('Tabora', 'Kaliua'),
+    ('Tabora', 'Sikonge'),
+    ('Tabora', 'Urambo'),
+    ('Tabora', 'Uyui'),
+
+    ('Tanga', 'Tanga'),
+    ('Tanga', 'Handeni'),
+    ('Tanga', 'Korogwe'),
+    ('Tanga', 'Bumbuli'),
+    ('Tanga', 'Kilindi'),
+    ('Tanga', 'Lushoto'),
+    ('Tanga', 'Mkinga'),
+    ('Tanga', 'Muheza'),
+    ('Tanga', 'Pangani'),
+
+    ('Mjini Magharibi', 'Mjini'),
+    ('Mjini Magharibi', 'Magharibi'),
+    ('Kaskazini Unguja', 'Kaskazini A'),
+    ('Kaskazini Unguja', 'Kaskazini B'),
+    ('Kusini Unguja', 'Kati'),
+    ('Kusini Unguja', 'Kusini'),
+    ('Kaskazini Pemba', 'Micheweni'),
+    ('Kaskazini Pemba', 'Wete'),
+    ('Kusini Pemba', 'Chake Chake'),
+    ('Kusini Pemba', 'Mkoani')
+) AS d(region_name, district_name)
+JOIN regions r ON r.region_name = d.region_name;
 
 
 -- ============================================================

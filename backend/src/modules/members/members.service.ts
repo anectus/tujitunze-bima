@@ -24,11 +24,24 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 interface TelecomOperator {
   operator_id: number;
   operator_name: string;
+  prefixes: string[];
 }
 
 interface Bank {
   bank_id: number;
   bank_name: string;
+}
+
+interface Region {
+  region_id: number;
+  region_name: string;
+  area_type: string;
+}
+
+interface District {
+  district_id: number;
+  district_name: string;
+  region_id: number;
 }
 
 @Injectable()
@@ -110,6 +123,54 @@ export class MembersService {
     }
 
     return bankResult[0];
+  }
+
+  private async findActiveRegion(
+    manager: EntityManager,
+    regionName: string,
+  ): Promise<Region> {
+    const regionResult = await manager.query<Region[]>(
+      `
+      SELECT region_id, region_name, area_type
+      FROM regions
+      WHERE region_name = $1
+        AND status = 'Active'
+      LIMIT 1
+      `,
+      [regionName],
+    );
+
+    if (!regionResult || regionResult.length === 0) {
+      throw new BadRequestException('Selected region is not supported');
+    }
+
+    return regionResult[0];
+  }
+
+  private async findActiveDistrict(
+    manager: EntityManager,
+    regionId: number,
+    districtName: string,
+  ): Promise<District> {
+    const districtResult = await manager.query<District[]>(
+      `
+      SELECT district_id, district_name, region_id
+      FROM districts
+      WHERE region_id = $1
+        AND district_name = $2
+        AND status = 'Active'
+      LIMIT 1
+      `,
+      [regionId, districtName],
+    );
+
+    if (!districtResult || districtResult.length === 0) {
+      throw new BadRequestException(
+        'Selected district does not belong to the selected region',
+      );
+    }
+
+    return districtResult[0];
   }
 
   private async findOperatorById(
@@ -334,11 +395,22 @@ export class MembersService {
   }
 
   async updateProfile(userId: number, data: UpdateProfileDto) {
-    const region = data.region.trim();
-
-    const district = data.district?.trim() || null;
-
     const dateOfBirth = data.dateOfBirth ? new Date(data.dateOfBirth) : null;
+
+    const region = await this.findActiveRegion(
+      this.dataSource.manager,
+      data.region.trim(),
+    );
+
+    const districtName = data.district?.trim() || null;
+
+    const district = districtName
+      ? await this.findActiveDistrict(
+          this.dataSource.manager,
+          region.region_id,
+          districtName,
+        )
+      : null;
 
     const user = await this.dataSource.manager.findOne(User, {
       where: { userId },
@@ -350,8 +422,8 @@ export class MembersService {
 
     user.gender = data.gender;
     user.dateOfBirth = dateOfBirth;
-    user.region = region;
-    user.district = district;
+    user.region = region.region_name;
+    user.district = district?.district_name ?? null;
 
     const savedUser = await this.dataSource.manager.save(User, user);
 
@@ -363,10 +435,20 @@ export class MembersService {
   async listTelecomOperators() {
     return this.dataSource.manager.query<TelecomOperator[]>(
       `
-      SELECT operator_id, operator_name
-      FROM telecom_operators
-      WHERE status = 'Active'
-      ORDER BY operator_name
+      SELECT
+        o.operator_id,
+        o.operator_name,
+        COALESCE(
+          array_agg(p.prefix ORDER BY p.prefix) FILTER (WHERE p.prefix IS NOT NULL),
+          ARRAY[]::VARCHAR[]
+        ) AS prefixes
+      FROM telecom_operators o
+      LEFT JOIN telecom_operator_prefixes p
+        ON p.operator_id = o.operator_id
+        AND p.status = 'Active'
+      WHERE o.status = 'Active'
+      GROUP BY o.operator_id, o.operator_name
+      ORDER BY o.operator_name
       `,
     );
   }
@@ -379,6 +461,30 @@ export class MembersService {
       WHERE status = 'Active'
       ORDER BY bank_name
       `,
+    );
+  }
+
+  async listRegions() {
+    return this.dataSource.manager.query<Region[]>(
+      `
+      SELECT region_id, region_name, area_type
+      FROM regions
+      WHERE status = 'Active'
+      ORDER BY region_name
+      `,
+    );
+  }
+
+  async listDistrictsByRegion(regionId: number) {
+    return this.dataSource.manager.query<District[]>(
+      `
+      SELECT district_id, district_name, region_id
+      FROM districts
+      WHERE region_id = $1
+        AND status = 'Active'
+      ORDER BY district_name
+      `,
+      [regionId],
     );
   }
 
@@ -426,12 +532,6 @@ export class MembersService {
       const prefix = phoneNumber.substring(0, 3);
 
       const operator = await this.findActiveOperatorForPrefix(manager, prefix);
-
-      if (operator.operator_id !== data.operatorId) {
-        throw new BadRequestException(
-          'Selected network does not match this phone number',
-        );
-      }
 
       const phone = manager.create(PhoneNumber, {
         userId,

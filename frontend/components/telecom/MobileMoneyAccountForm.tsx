@@ -5,19 +5,29 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ACCESS_TOKEN_STORAGE_KEY } from "@/lib/utils/permissions";
-
-interface TelecomOperator {
-  operator_id: number;
-  operator_name: string;
-}
+import {
+  detectTelecomOperator,
+  type TelecomOperatorLookup,
+} from "@/lib/utils/formatPhone";
 
 interface Bank {
   bank_id: number;
   bank_name: string;
 }
 
+interface Region {
+  region_id: number;
+  region_name: string;
+  area_type: string;
+}
+
+interface District {
+  district_id: number;
+  district_name: string;
+  region_id: number;
+}
+
 interface MobileMoneyAccountEntry {
-  operatorId: string;
   phoneNumber: string;
   accountNumber: string;
 }
@@ -33,8 +43,18 @@ const inputClass =
   "text-gray-900 outline-none transition " +
   "focus:border-blue-700 focus:ring-2 focus:ring-blue-200";
 
+// Official logo files, supplied directly by the project owner into
+// frontend/public/logos/ — not sourced or embedded by generating them
+// here, since these are each operator's real trademarked artwork.
+const OPERATOR_LOGOS: Record<string, string> = {
+  Vodacom: "/logos/vodacom.jpeg",
+  Airtel: "/logos/airtel.png",
+  Halotel: "/logos/halotel.jpeg",
+  TTCL: "/logos/ttcl.png",
+  "Yas Money": "/logos/yas-money.jpeg",
+};
+
 const emptyEntry: MobileMoneyAccountEntry = {
-  operatorId: "",
   phoneNumber: "",
   accountNumber: "",
 };
@@ -42,8 +62,10 @@ const emptyEntry: MobileMoneyAccountEntry = {
 export default function MobileMoneyAccountForm() {
   const router = useRouter();
 
-  const [operators, setOperators] = useState<TelecomOperator[]>([]);
   const [banks, setBanks] = useState<Bank[]>([]);
+  const [regions, setRegions] = useState<Region[]>([]);
+  const [districts, setDistricts] = useState<District[]>([]);
+  const [operators, setOperators] = useState<TelecomOperatorLookup[]>([]);
 
   const [profile, setProfile] = useState({
     gender: "",
@@ -70,32 +92,64 @@ export default function MobileMoneyAccountForm() {
   useEffect(() => {
     const loadLookups = async () => {
       try {
-        const [operatorsResponse, banksResponse] = await Promise.all([
-          fetch("http://localhost:3002/members/telecom-operators"),
-          fetch("http://localhost:3002/members/banks"),
-        ]);
-
-        if (operatorsResponse.ok) {
-          setOperators(await operatorsResponse.json());
-        }
+        const [banksResponse, regionsResponse, operatorsResponse] =
+          await Promise.all([
+            fetch("http://localhost:3002/members/banks"),
+            fetch("http://localhost:3002/members/regions"),
+            fetch("http://localhost:3002/members/telecom-operators"),
+          ]);
 
         if (banksResponse.ok) {
           setBanks(await banksResponse.json());
         }
+
+        if (regionsResponse.ok) {
+          setRegions(await regionsResponse.json());
+        }
+
+        if (operatorsResponse.ok) {
+          setOperators(await operatorsResponse.json());
+        }
       } catch {
-        setError("Unable to load network/bank options. Please try again.");
+        setError("Unable to load bank/region options. Please try again.");
       }
     };
 
     loadLookups();
   }, []);
 
+  // The district list depends on the selected region, so it's fetched
+  // fresh each time the region changes rather than loaded upfront.
+  useEffect(() => {
+    const selectedRegion = regions.find(
+      (region) => region.region_name === profile.region
+    );
+
+    if (!selectedRegion) {
+      setDistricts([]);
+      return;
+    }
+
+    fetch(
+      `http://localhost:3002/members/districts?regionId=${selectedRegion.region_id}`
+    )
+      .then((response) => (response.ok ? response.json() : []))
+      .then((data: District[]) => setDistricts(data))
+      .catch(() => setDistricts([]));
+  }, [profile.region, regions]);
+
   const handleProfileChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
 
-    setProfile((previous) => ({ ...previous, [name]: value }));
+    setProfile((previous) => ({
+      ...previous,
+      [name]: value,
+      // A district only belongs to one region, so switching regions
+      // clears whatever district was previously selected.
+      ...(name === "region" ? { district: "" } : {}),
+    }));
 
     setError("");
     setSuccess("");
@@ -106,7 +160,7 @@ export default function MobileMoneyAccountForm() {
   // =====================================================
 
   const canAddAccount = accounts.every(
-    (entry) => entry.operatorId && entry.phoneNumber.trim().length > 0
+    (entry) => entry.phoneNumber.trim().length > 0
   );
 
   const addAccountEntry = () => {
@@ -228,7 +282,6 @@ export default function MobileMoneyAccountForm() {
             method: "POST",
             headers: authHeaders,
             body: JSON.stringify({
-              operatorId: Number(entry.operatorId),
               phoneNumber: entry.phoneNumber,
               accountNumber: entry.accountNumber || undefined,
             }),
@@ -379,7 +432,77 @@ export default function MobileMoneyAccountForm() {
                 className={inputClass}
               />
             </div>
+            
+             {/* Region */}
+            <div>
+              <label
+                htmlFor="region"
+                className="mb-2 block text-sm font-semibold text-gray-700"
+              >
+                Region
+              </label>
 
+              <select
+                id="region"
+                name="region"
+                value={profile.region}
+                onChange={handleProfileChange}
+                required
+                className={inputClass}
+              >
+                <option value="" disabled>
+                  Select your region
+                </option>
+
+                {regions.map((region) => (
+                  <option key={region.region_id} value={region.region_name}>
+                    {region.region_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+
+             {/* District - Optional */}
+            <div>
+              <label
+                htmlFor="district"
+                className="mb-2 block text-sm font-semibold text-gray-700"
+              >
+                District
+                <span className="ml-2 text-xs font-normal text-gray-500">
+                  (Optional)
+                </span>
+              </label>
+
+              <select
+                id="district"
+                name="district"
+                value={profile.district}
+                onChange={handleProfileChange}
+                disabled={!profile.region}
+                className={inputClass}
+              >
+                <option value="">
+                  {profile.region
+                    ? "Select your district"
+                    : "Select a region first"}
+                </option>
+
+                {districts.map((district) => (
+                  <option
+                    key={district.district_id}
+                    value={district.district_name}
+                  >
+                    {district.district_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            
+            
+            
             {/* Mobile Money Accounts */}
             {accounts.map((entry, index) => (
               <div
@@ -408,39 +531,6 @@ export default function MobileMoneyAccountForm() {
                   </div>
                 )}
 
-                {/* Network */}
-                <div>
-                  <label
-                    htmlFor={`operatorId-${index}`}
-                    className="mb-2 block text-sm font-semibold text-gray-700"
-                  >
-                    Network
-                  </label>
-
-                  <select
-                    id={`operatorId-${index}`}
-                    value={entry.operatorId}
-                    onChange={(e) =>
-                      updateAccountEntry(index, "operatorId", e.target.value)
-                    }
-                    required
-                    className={inputClass}
-                  >
-                    <option value="" disabled>
-                      Select your network
-                    </option>
-
-                    {operators.map((operator) => (
-                      <option
-                        key={operator.operator_id}
-                        value={operator.operator_id}
-                      >
-                        {operator.operator_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
                 {/* Phone Number */}
                 <div>
                   <label
@@ -450,21 +540,60 @@ export default function MobileMoneyAccountForm() {
                     Phone Number
                   </label>
 
-                  <input
-                    id={`phoneNumber-${index}`}
-                    type="tel"
-                    value={entry.phoneNumber}
-                    onChange={(e) =>
-                      updateAccountEntry(index, "phoneNumber", e.target.value)
-                    }
-                    placeholder="0626881149"
-                    required
-                    autoComplete="tel"
-                    className={inputClass}
-                  />
+                  <div className="relative">
+                    <input
+                      id={`phoneNumber-${index}`}
+                      type="tel"
+                      value={entry.phoneNumber}
+                      onChange={(e) =>
+                        updateAccountEntry(
+                          index,
+                          "phoneNumber",
+                          e.target.value
+                        )
+                      }
+                      placeholder="0626881149"
+                      required
+                      autoComplete="tel"
+                      className={
+                        detectTelecomOperator(entry.phoneNumber, operators)
+                          ? `${inputClass} pr-32`
+                          : inputClass
+                      }
+                    />
+
+                    {(() => {
+                      const detected = detectTelecomOperator(
+                        entry.phoneNumber,
+                        operators
+                      );
+
+                      if (!detected) {
+                        return null;
+                      }
+
+                      const logoSrc = OPERATOR_LOGOS[detected.operator_name];
+
+                      return (
+                        <span className="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1.5 rounded-full border border-gray-200 bg-white py-1 pl-1 pr-2.5 text-xs font-semibold text-gray-700 shadow-sm">
+                          {logoSrc && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={logoSrc}
+                              alt=""
+                              width={20}
+                              height={20}
+                              className="h-5 w-5 rounded-full object-cover"
+                            />
+                          )}
+                          {detected.operator_name}
+                        </span>
+                      );
+                    })()}
+                  </div>
 
                   <p className="mt-1 text-xs text-gray-500">
-                    Must match the network you selected above.
+                    Your network is detected automatically from this number.
                   </p>
                 </div>
 
@@ -510,51 +639,8 @@ export default function MobileMoneyAccountForm() {
               </button>
             )}
 
-            {/* Region */}
-            <div>
-              <label
-                htmlFor="region"
-                className="mb-2 block text-sm font-semibold text-gray-700"
-              >
-                Region
-              </label>
-
-              <input
-                id="region"
-                name="region"
-                type="text"
-                value={profile.region}
-                onChange={handleProfileChange}
-                placeholder="Enter your region"
-                required
-                autoComplete="address-level1"
-                className={inputClass}
-              />
-            </div>
-
-            {/* District - Optional */}
-            <div>
-              <label
-                htmlFor="district"
-                className="mb-2 block text-sm font-semibold text-gray-700"
-              >
-                District
-                <span className="ml-2 text-xs font-normal text-gray-500">
-                  (Optional)
-                </span>
-              </label>
-
-              <input
-                id="district"
-                name="district"
-                type="text"
-                value={profile.district}
-                onChange={handleProfileChange}
-                placeholder="Enter your district"
-                autoComplete="address-level2"
-                className={inputClass}
-              />
-            </div>
+           
+           
 
             {/* Bank Accounts - Optional */}
             <div className="space-y-4">
