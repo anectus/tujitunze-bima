@@ -5,7 +5,33 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { ACCESS_TOKEN_STORAGE_KEY } from "@/lib/utils/permissions";
+import {
+  ACCESS_TOKEN_STORAGE_KEY,
+  decodeAccessToken,
+  getStaffDashboardPath,
+} from "@/lib/utils/permissions";
+
+// Registration only ever collects name/NIDA/phone/password — `region` is
+// set solely by the onboarding/mobile-money form's PATCH /members/me
+// (see MobileMoneyAccountForm.tsx), so its presence is a reliable signal
+// that a member has already been through onboarding at least once.
+async function resolveMemberLandingPath(accessToken: string): Promise<string> {
+  try {
+    const response = await fetch("http://localhost:3002/members/me", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) {
+      return "/onboarding/mobile-money";
+    }
+
+    const profile = await response.json();
+
+    return profile.region ? "/dashboard" : "/onboarding/mobile-money";
+  } catch {
+    return "/onboarding/mobile-money";
+  }
+}
 
 export default function LoginForm() {
   const router = useRouter();
@@ -70,7 +96,9 @@ export default function LoginForm() {
 
       localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, data.accessToken);
 
-      router.push("/onboarding/mobile-money");
+      const payload = decodeAccessToken(data.accessToken);
+
+      router.push(getPostLoginRedirect(payload?.roles ?? []));
 
     } catch (error) {
       if (error instanceof Error) {

@@ -121,6 +121,38 @@ export class User {
   })
   phoneVerified!: boolean;
 
+  // Staff tenant links — set only for a user whose member_roles include
+  // the matching role, so a role-scoped dashboard knows which hospital/
+  // bank/operator/provider is "their own." See database/migrations/
+  // 0004_add_staff_tenant_links.sql.
+  @Column({
+    name: 'hospital_id',
+    type: 'int',
+    nullable: true,
+  })
+  hospitalId!: number | null;
+
+  @Column({
+    name: 'bank_id',
+    type: 'int',
+    nullable: true,
+  })
+  bankId!: number | null;
+
+  @Column({
+    name: 'telecom_operator_id',
+    type: 'int',
+    nullable: true,
+  })
+  telecomOperatorId!: number | null;
+
+  @Column({
+    name: 'insurance_provider_id',
+    type: 'int',
+    nullable: true,
+  })
+  insuranceProviderId!: number | null;
+
   @CreateDateColumn({
     name: 'created_at',
     type: 'timestamp',

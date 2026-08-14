@@ -9,6 +9,11 @@ import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { ContactModule } from './modules/contact/contact.module';
 import { MembersModule } from './modules/members/members.module';
 import { WalletsModule } from './modules/wallets/wallets.module';
+import { HospitalModule } from './modules/hospital/hospital.module';
+import { BankModule } from './modules/bank/bank.module';
+import { TelecomModule } from './modules/telecom/telecom.module';
+import { InsuranceModule } from './modules/insurance/insurance.module';
+import { SuperAdminModule } from './modules/super-admin/super-admin.module';
 
 @Module({
   imports: [
@@ -31,6 +36,16 @@ import { WalletsModule } from './modules/wallets/wallets.module';
     ContactModule,
 
     WalletsModule,
+
+    HospitalModule,
+
+    BankModule,
+
+    TelecomModule,
+
+    InsuranceModule,
+
+    SuperAdminModule,
   ],
 })
 export class AppModule {}

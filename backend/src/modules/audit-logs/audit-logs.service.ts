@@ -42,4 +42,14 @@ export class AuditLogsService {
       take: limit,
     });
   }
+
+  async countRecent(hours = 24): Promise<number> {
+    const rows = await this.dataSource.query<{ count: number }[]>(
+      `SELECT COUNT(*)::int AS count FROM audit_logs
+       WHERE created_at >= NOW() - ($1 || ' hours')::interval`,
+      [hours],
+    );
+
+    return rows[0].count;
+  }
 }

@@ -1,0 +1,68 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Put,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request } from 'express';
+
+import { SuperAdminRolesService } from './super-admin-roles.service';
+import { CreateRoleDto } from './dto/create-role.dto';
+import { UpdateRolePermissionsDto } from './dto/update-role-permissions.dto';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import type { AuthenticatedUser } from '../auth/jwt.strategy';
+
+@Controller('super-admin')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('Super-admin')
+export class SuperAdminRolesController {
+  constructor(
+    private readonly superAdminRolesService: SuperAdminRolesService,
+  ) {}
+
+  @Get('roles')
+  async listRoles() {
+    return this.superAdminRolesService.listRoles();
+  }
+
+  @Post('roles')
+  async createRole(
+    @Body() body: CreateRoleDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.superAdminRolesService.createRole(
+      body,
+      actor.userId,
+      request.ip,
+    );
+  }
+
+  @Get('permissions')
+  async listPermissions() {
+    return this.superAdminRolesService.listPermissions();
+  }
+
+  @Put('roles/:id/permissions')
+  async updateRolePermissions(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: UpdateRolePermissionsDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.superAdminRolesService.updateRolePermissions(
+      id,
+      body,
+      actor.userId,
+      request.ip,
+    );
+  }
+}

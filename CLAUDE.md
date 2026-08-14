@@ -12,48 +12,87 @@ Source of truth: the `roles` table seed data in `database/schema/tujitunze.sql`
 and the route groups under `frontend/app/(*)`. Backend enforcement is
 `@Roles('RoleName')` + `RolesGuard` (`backend/src/modules/auth/guards/roles.guard.ts`)
 on top of `JwtAuthGuard` — a request must pass both to reach a role-scoped
-handler. As of 2026-08-12, **`Member` and `Admin` are the only roles with
-real backend endpoints and `RolesGuard` enforcement**
-(`members.controller.ts`; `backend/src/modules/admin/` — members
-management via `admin.controller.ts` and hospital-directory management
-via `admin-hospitals.controller.ts`).
-Every other role still has no backend controller at all
-(`backend/src/modules/{bank,telecom,insurance}` etc. are empty
-`@Module({})` stubs, not imported into `AppModule`) — there's nothing to
-guard on the backend until those modules get real endpoints, at which
-point they should copy the same `JwtAuthGuard` + `RolesGuard` +
-`@Roles(...)` pattern the `admin` module now demonstrates. There is also
-no way yet to create an Admin account (registration always assigns
-`Member`) — an Admin row has to be inserted into `member_roles` by hand
-until Super-admin's "manage other Admins" capability exists.
+handler. As of 2026-08-14, **every role has at least one real, guarded
+backend endpoint**: `Member` (`members.controller.ts`), `Admin`
+(`backend/src/modules/admin/` — members and hospital-directory management,
+plus `GET /admin/dashboard`), and now `Hospital`/`Bank`/`Telecom`/
+`Insurance`/`Super-admin`, each with its own module
+(`backend/src/modules/{hospital,bank,telecom,insurance,super-admin}/`)
+exposing a single `GET /<role>/dashboard` summary endpoint following the
+same `JwtAuthGuard` + `RolesGuard` + `@Roles(...)` pattern `admin`
+established. Beyond that one endpoint per role, these five are still a
+thin slice — no CRUD for patients/claims/billing/accounts/etc. yet; add
+those to the same module as the need comes up, not as new modules per
+resource.
+
+Hospital/Bank/Telecom/Insurance dashboards are tenant-scoped: `users` has
+nullable `hospital_id`/`bank_id`/`telecom_operator_id`/
+`insurance_provider_id` columns (`database/migrations/
+0004_add_staff_tenant_links.sql`) linking a staff account to the specific
+hospital/bank/operator/provider it belongs to, and each service throws
+`ForbiddenException` if that link is unset rather than returning
+empty/global data.
+
+As of 2026-08-14, Super-admin can now create staff accounts for any role
+through a real endpoint instead of hand-written SQL: `POST /super-admin/
+administrators` (`backend/src/modules/super-admin/super-admin.service.ts`
+`createAdministrator`, DTO in `dto/create-administrator.dto.ts`) validates
+NIDA/email uniqueness the same way `members.service.ts`'s `register()`
+does, hashes the password at the same bcrypt cost (12 rounds), rejects a
+tenant id that doesn't match what the chosen role requires (Hospital/Bank/
+Telecom/Insurance need one, Admin/Super-admin must not have one), and
+audit-logs the creation (`staff_account.create`) inside the same
+transaction as the write. `GET /super-admin/administrators` lists every
+non-Member account with its role and tenant name; `GET /super-admin/
+tenants` feeds the create form's tenant dropdown. Frontend at
+`(super-admin)/super-admin/administrators/page.tsx`. `Member` accounts
+still only ever come from `/members/register` — this endpoint deliberately
+excludes that role. Covered by
+`backend/test/super-admin-administrators.e2e-spec.ts`, including the full
+create → log in → reach the new account's own scoped dashboard loop.
 
 Each role's frontend route group (`app/(admin)`, `(hospital)`, `(bank)`,
-`(telecom)`, `(super-admin)`, `(member)`) does have a client-side gate now:
-`components/auth/ProtectedRoute.tsx` (using `lib/hooks/useAuth.ts` /
-`lib/utils/permissions.ts`) wraps each `layout.tsx`, decodes the JWT out of
-`localStorage`, and redirects to `/login` (no/expired token) or
-`/access-denied` (wrong role). **This is UX/defense-in-depth only, not a
-security boundary** — the token is decoded client-side, not verified, so
-it's trivially bypassable by editing `localStorage`. It's an acceptable gap
-only because there's no real data behind these routes yet; once a module
-has real endpoints, the backend guard above is what actually protects the
+`(telecom)`, `(super-admin)`, `(insurance)`, `(member)`) does have a
+client-side gate now: `components/auth/ProtectedRoute.tsx` (using
+`lib/hooks/useAuth.ts` / `lib/utils/permissions.ts`) wraps each
+`layout.tsx`, decodes the JWT out of `localStorage`, and redirects to
+`/login` (no/expired token) or `/access-denied` (wrong role). **This is
+UX/defense-in-depth only, not a security boundary** — the token is decoded
+client-side, not verified, so it's trivially bypassable by editing
+`localStorage`. The backend guard above is what actually protects the
 data, same as the existing rule that the frontend not showing a button is
 never sufficient on its own.
+
+Every staff route group now also shares one sidebar shell
+(`components/dashboard/DashboardLayout.tsx` + `components/common/
+Sidebar.tsx`, mounted in each group's `layout.tsx`) so a role's nav is
+consistent across every page in that group, not just its dashboard. A
+group's `NAV_ITEMS` list only real pages — most of these route groups
+still have no `page.tsx` beyond `dashboard/`, so don't copy a nav entry
+from this table's route-group column without first checking the page
+exists, or it'll 404.
+
+Route groups don't add a URL prefix in Next.js — `(admin)/dashboard` and
+`(member)/dashboard` would both resolve to `/dashboard` and collide, which
+is why each role's dashboard lives at `/<role>/dashboard`
+(`app/(admin)/admin/dashboard`, `app/(hospital)/hospital/dashboard`, …)
+except `Member`, which already owned the bare `/dashboard`. The other
+folders each route group was originally scaffolded with (e.g. `(admin)/
+claims`, `(admin)/settings`) are still bare, unprefixed segments — the
+same collision is latent there too (two role groups both adding, say, a
+`reports/page.tsx` will collide at `/reports`) and will need the same
+`/<role>/...` prefix treatment whenever those get built out, not just
+`dashboard`.
 
 | Role | Who | Route group | What they're for |
 |---|---|---|---|
 | `Member` | A registered citizen/patient | `(member)` — dashboard, wallet, telecom, insurance, hospitals, reports, profile, notifications, settings, qr, onboarding | Their own health savings/wallet, linking phone/bank accounts, viewing their own claims and insurance, nothing belonging to another member |
-| `Admin` | Internal Tujitunze staff | `(admin)` — members, users, claims, transactions, hospitals, banks, telecom, reports, audit-logs, settings | Operational oversight across members: user/claim/transaction management, reviewing audit logs — not the same as `Super-admin` (system-level config) |
-| `Hospital` | Staff at a partner hospital | `(hospital)` — patients, claims, billing, appointments, staff, reports, settings | Their own hospital's patients/claims/billing/staff only — a hospital must never see another hospital's claims (the exact boundary a test should assert) |
-| `Insurance` | Staff at an insurance provider | *(no dedicated route group yet — gap; `(member)/insurance` is the member's own view, not a provider portal)* | Managing their own plans and reviewing claims routed to them |
-| `Bank` | Staff at a partner bank / bank integration | `(bank)` — accounts, customers, transactions, transfers, reconciliation, reports, settings | Their own bank's linked accounts/transactions — same cross-tenant boundary concern as Hospital |
-| `Telecom` | Staff at a partner telecom operator | `(telecom)` — customers, transactions, payments, reconciliation, reports, dashboard, settings | Their own operator's contribution/levy data only |
-| `Super-admin` | Platform owner/operator | `(super-admin)` — administrators, roles, permissions, integrations, system, audit-logs, settings | System-wide configuration, managing other Admins, integrations — **not seeded in the `roles` table today** (only 6 rows exist: Member/Admin/Hospital/Insurance/Bank/Telecom); add a migration/seed row before any `@Roles('Super-admin')` guard is written, or logins for this role will always fail the `RolesGuard` check |
-
-Two open items this table surfaces: (1) `Super-admin` has a route group but
-no `roles` row — a `Super-admin` account can never pass `RolesGuard` until
-one is seeded; (2) `Insurance` has a `roles` row but no route group — a
-provider-facing portal hasn't been scaffolded yet.
+| `Admin` | Internal Tujitunze staff | `(admin)` — members, users, claims, transactions, hospitals, banks, telecom, reports, audit-logs, settings; dashboard at `/admin/dashboard` | Operational oversight across members: user/claim/transaction management, reviewing audit logs — not the same as `Super-admin` (system-level config) |
+| `Hospital` | Staff at a partner hospital | `(hospital)` — dashboard at `/hospital/dashboard` (only real page so far); patients, claims, billing, appointments, staff, reports, settings folders still empty | Their own hospital's patients/claims/billing/staff only — a hospital must never see another hospital's claims (enforced today via `users.hospital_id` scoping in `hospital.service.ts`, and tested in `backend/test/role-dashboards.e2e-spec.ts`) |
+| `Insurance` | Staff at an insurance provider | `(insurance)` — dashboard at `/insurance/dashboard` (only page; route group didn't exist before 2026-08-14) | Managing their own plans and reviewing claims routed to them |
+| `Bank` | Staff at a partner bank / bank integration | `(bank)` — dashboard at `/bank/dashboard` (only real page so far); accounts, customers, transactions, transfers, reconciliation, reports, settings folders still empty | Their own bank's linked accounts/transactions — same cross-tenant boundary concern as Hospital |
+| `Telecom` | Staff at a partner telecom operator | `(telecom)` — dashboard at `/telecom/dashboard` (only real page so far); customers, transactions, payments, reconciliation, reports, settings folders still empty | Their own operator's contribution/levy data only |
+| `Super-admin` | Platform owner/operator | `(super-admin)` — dashboard at `/super-admin/dashboard`, staff provisioning at `/super-admin/administrators`; roles, permissions, integrations, system, audit-logs, settings folders still empty | System-wide configuration, managing other Admins, integrations — role is seeded (`role_id 7`); can now create a staff account (any role) via `/super-admin/administrators`; editing the roles/permissions catalog itself is still the open gap |
 
 ## Secure Software Development Life Cycle (SSDLC)
 
@@ -123,17 +162,23 @@ a default.
 - Revisit this file's "known gaps" as they're closed, so it stays a live
   checklist instead of stale advice.
 
-## Known Security Gaps (updated 2026-08-12)
+## Known Security Gaps (updated 2026-08-14)
 
 Resolved since the original baseline: global `ValidationPipe`/DTOs are now
 wired in `main.ts`; login issues a real JWT (`auth.service.ts`); guards
 (`JwtAuthGuard`, `RolesGuard`) now protect role-scoped routes;
-`backend/.env.example` lists required variables; and `audit_logs` is now a
+`backend/.env.example` lists required variables; `audit_logs` is now a
 real entity/service (`backend/src/modules/audit-logs/`), written to
 atomically inside the same DB transaction as the write it's logging
 (`phone_number.add`, `bank_account.add`, `member.password_change`,
 `member.status_change`), with an Admin-only `GET /admin/audit-logs` to
-read it back.
+read it back; `Hospital`/`Bank`/`Telecom`/`Insurance`/`Super-admin` now
+each have a real guarded `GET /<role>/dashboard` endpoint instead of an
+empty module stub; the `Super-admin` role row (previously believed
+unseeded) was confirmed already present in the live database — no seed
+migration was actually needed; and Super-admin can now provision a staff
+account for any role via `POST /super-admin/administrators` instead of a
+hand-written SQL `INSERT` (see the Roles section above).
 
 Still open, flagged so they aren't silently reintroduced or forgotten:
 
@@ -169,3 +214,11 @@ Still open, flagged so they aren't silently reintroduced or forgotten:
    ledger math, not a real funds movement. Treat this as the wallet's
    internal accounting layer, not a payment feature, until a real
    mobile-money/bank integration sits in front of it.
+9. `POST /super-admin/administrators` (added 2026-08-14) can *create* a
+   staff account for any role and set its tenant link, but there's still
+   no way to edit, deactivate, delete, or reassign one after creation, and
+   no rate limiting on the endpoint (same class of gap as #1). A
+   Hospital/Bank/Telecom/Insurance login with no tenant link set still
+   gets a `403 Forbidden` from its dashboard rather than someone else's
+   data or a silent empty result — that part of the design hasn't changed,
+   only how the link gets set in the first place.

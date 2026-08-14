@@ -1,16 +1,16 @@
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 
-const NAV_ITEMS = [{ label: "Dashboard", href: "/telecom/dashboard" }];
+const NAV_ITEMS = [{ label: "Dashboard", href: "/insurance/dashboard" }];
 
-export default function TelecomLayout({
+export default function InsuranceLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <ProtectedRoute allowedRoles={["Telecom"]}>
-      <DashboardLayout roleLabel="Telecom" navItems={NAV_ITEMS}>
+    <ProtectedRoute allowedRoles={["Insurance"]}>
+      <DashboardLayout roleLabel="Insurance" navItems={NAV_ITEMS}>
         {children}
       </DashboardLayout>
     </ProtectedRoute>

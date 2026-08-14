@@ -40,3 +40,25 @@ export function isTokenExpired(payload: AccessTokenPayload): boolean {
 export function hasRole(roles: string[], allowedRoles: string[]): boolean {
   return allowedRoles.some((role) => roles.includes(role));
 }
+
+// Where each role lands right after login. Staff roles go straight to
+// their own dashboard; Member keeps the existing onboarding funnel as the
+// default (also the fallback for a token with no recognized role).
+const ROLE_DASHBOARD_PATHS: Record<string, string> = {
+  Admin: "/admin/dashboard",
+  Hospital: "/hospital/dashboard",
+  Bank: "/bank/dashboard",
+  Telecom: "/telecom/dashboard",
+  Insurance: "/insurance/dashboard",
+  "Super-admin": "/super-admin/dashboard",
+};
+
+// Returns the staff dashboard for a role that has one, or null if the
+// token holds no such role (in practice: a plain Member) — callers decide
+// the Member-specific landing page themselves, since that one depends on
+// whether onboarding is already complete, not just the role name.
+export function getStaffDashboardPath(roles: string[]): string | null {
+  const staffRole = roles.find((role) => role in ROLE_DASHBOARD_PATHS);
+
+  return staffRole ? ROLE_DASHBOARD_PATHS[staffRole] : null;
+}

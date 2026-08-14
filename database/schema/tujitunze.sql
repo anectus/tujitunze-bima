@@ -872,6 +872,31 @@ CREATE TABLE contact_messages (
 
 
 -- ============================================================
+-- 27b. STAFF TENANT LINKS
+-- ============================================================
+-- Links a Hospital/Bank/Telecom/Insurance staff account (users row
+-- with that role in member_roles) to the specific hospital/bank/
+-- operator/provider they work for, so role-scoped dashboards and
+-- queries can be limited to "my own tenant's data." Nullable —
+-- only set for staff of the matching role. See database/migrations/
+-- 0004_add_staff_tenant_links.sql for applying this to an existing
+-- database, and CLAUDE.md's Known Security Gaps for the still-open
+-- gap that nothing yet assigns these besides a manual insert.
+
+ALTER TABLE users ADD COLUMN hospital_id INT
+    REFERENCES hospitals(hospital_id);
+
+ALTER TABLE users ADD COLUMN bank_id INT
+    REFERENCES banks(bank_id);
+
+ALTER TABLE users ADD COLUMN telecom_operator_id INT
+    REFERENCES telecom_operators(operator_id);
+
+ALTER TABLE users ADD COLUMN insurance_provider_id INT
+    REFERENCES insurance_providers(provider_id);
+
+
+-- ============================================================
 -- 28. PERFORMANCE INDEXES
 -- ============================================================
 
