@@ -1,9 +1,11 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
   Put,
   Req,
@@ -13,6 +15,7 @@ import type { Request } from 'express';
 
 import { SuperAdminRolesService } from './super-admin-roles.service';
 import { CreateRoleDto } from './dto/create-role.dto';
+import { UpdateRoleDto } from './dto/update-role.dto';
 import { UpdateRolePermissionsDto } from './dto/update-role-permissions.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -44,6 +47,30 @@ export class SuperAdminRolesController {
       actor.userId,
       request.ip,
     );
+  }
+
+  @Patch('roles/:id')
+  async updateRole(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: UpdateRoleDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.superAdminRolesService.updateRole(
+      id,
+      body,
+      actor.userId,
+      request.ip,
+    );
+  }
+
+  @Delete('roles/:id')
+  async deleteRole(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.superAdminRolesService.deleteRole(id, actor.userId, request.ip);
   }
 
   @Get('permissions')

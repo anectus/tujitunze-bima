@@ -4,6 +4,7 @@ import DashboardLayout from "@/components/dashboard/DashboardLayout";
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/super-admin/dashboard" },
   { label: "Administrators", href: "/super-admin/administrators" },
+  { label: "Roles & Permissions", href: "/super-admin/roles" },
 ];
 
 export default function SuperAdminLayout({

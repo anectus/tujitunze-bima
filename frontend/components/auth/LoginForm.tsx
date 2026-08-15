@@ -97,8 +97,11 @@ export default function LoginForm() {
       localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, data.accessToken);
 
       const payload = decodeAccessToken(data.accessToken);
+      const staffDashboardPath = getStaffDashboardPath(payload?.roles ?? []);
 
-      router.push(getPostLoginRedirect(payload?.roles ?? []));
+      router.push(
+        staffDashboardPath ?? (await resolveMemberLandingPath(data.accessToken))
+      );
 
     } catch (error) {
       if (error instanceof Error) {

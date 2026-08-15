@@ -51,6 +51,31 @@ excludes that role. Covered by
 `backend/test/super-admin-administrators.e2e-spec.ts`, including the full
 create → log in → reach the new account's own scoped dashboard loop.
 
+As of 2026-08-15, Super-admin can also manage the roles/permissions catalog
+itself, closing the gap the table below used to call out: `GET
+/super-admin/roles` lists every role with its permissions and live
+`user_count`; `POST /super-admin/roles` creates a role (starts with no
+permissions); `PUT /super-admin/roles/:id/permissions` replaces a role's
+permission set wholesale (not incremental — send the full desired list);
+`PATCH /super-admin/roles/:id` renames/redescribes a role; `DELETE
+/super-admin/roles/:id` removes one. `GET /super-admin/permissions` lists
+the permission catalog for the assignment UI. All five live in
+`super-admin-roles.service.ts`/`super-admin-roles.controller.ts` and share
+the same `JwtAuthGuard` + `RolesGuard` + `@Roles('Super-admin')` guard as
+`administrators`. Rename/delete both reject the seven seeded role names
+(`Member`/`Admin`/`Hospital`/`Bank`/`Telecom`/`Insurance`/`Super-admin` —
+see `CORE_ROLE_NAMES` in the service) with `403`, since those strings are
+load-bearing in every `@Roles(...)` decorator and frontend route group;
+delete additionally rejects with `409` if the role still has any
+`member_roles` rows (reassign first). Every write is audit-logged
+(`role.create`/`role.update`/`role.permissions_update`/`role.delete`)
+inside the same transaction. Frontend at
+`(super-admin)/super-admin/roles/page.tsx` — core roles render read-only
+(name/description as text, no delete button); custom roles get editable
+fields and a delete button, purely a UX mirror of the backend's guard, not
+a substitute for it. Covered by
+`backend/test/super-admin-roles.e2e-spec.ts`.
+
 Each role's frontend route group (`app/(admin)`, `(hospital)`, `(bank)`,
 `(telecom)`, `(super-admin)`, `(insurance)`, `(member)`) does have a
 client-side gate now: `components/auth/ProtectedRoute.tsx` (using
@@ -92,7 +117,7 @@ same collision is latent there too (two role groups both adding, say, a
 | `Insurance` | Staff at an insurance provider | `(insurance)` — dashboard at `/insurance/dashboard` (only page; route group didn't exist before 2026-08-14) | Managing their own plans and reviewing claims routed to them |
 | `Bank` | Staff at a partner bank / bank integration | `(bank)` — dashboard at `/bank/dashboard` (only real page so far); accounts, customers, transactions, transfers, reconciliation, reports, settings folders still empty | Their own bank's linked accounts/transactions — same cross-tenant boundary concern as Hospital |
 | `Telecom` | Staff at a partner telecom operator | `(telecom)` — dashboard at `/telecom/dashboard` (only real page so far); customers, transactions, payments, reconciliation, reports, settings folders still empty | Their own operator's contribution/levy data only |
-| `Super-admin` | Platform owner/operator | `(super-admin)` — dashboard at `/super-admin/dashboard`, staff provisioning at `/super-admin/administrators`; roles, permissions, integrations, system, audit-logs, settings folders still empty | System-wide configuration, managing other Admins, integrations — role is seeded (`role_id 7`); can now create a staff account (any role) via `/super-admin/administrators`; editing the roles/permissions catalog itself is still the open gap |
+| `Super-admin` | Platform owner/operator | `(super-admin)` — dashboard at `/super-admin/dashboard`, staff provisioning at `/super-admin/administrators`, roles/permissions catalog at `/super-admin/roles`; integrations, system, audit-logs, settings folders still empty | System-wide configuration, managing other Admins, integrations — role is seeded (`role_id 7`); can create a staff account (any role) via `/super-admin/administrators` and manage the roles/permissions catalog via `/super-admin/roles` (create/rename/delete a role, assign its permissions) — the seven core role names can't be renamed or deleted |
 
 ## Secure Software Development Life Cycle (SSDLC)
 
@@ -162,7 +187,7 @@ a default.
 - Revisit this file's "known gaps" as they're closed, so it stays a live
   checklist instead of stale advice.
 
-## Known Security Gaps (updated 2026-08-14)
+## Known Security Gaps (updated 2026-08-15)
 
 Resolved since the original baseline: global `ValidationPipe`/DTOs are now
 wired in `main.ts`; login issues a real JWT (`auth.service.ts`); guards
@@ -176,9 +201,12 @@ read it back; `Hospital`/`Bank`/`Telecom`/`Insurance`/`Super-admin` now
 each have a real guarded `GET /<role>/dashboard` endpoint instead of an
 empty module stub; the `Super-admin` role row (previously believed
 unseeded) was confirmed already present in the live database — no seed
-migration was actually needed; and Super-admin can now provision a staff
+migration was actually needed; Super-admin can now provision a staff
 account for any role via `POST /super-admin/administrators` instead of a
-hand-written SQL `INSERT` (see the Roles section above).
+hand-written SQL `INSERT`; and Super-admin can now create/rename/delete
+roles and edit their permission sets via `/super-admin/roles` instead of
+hand-written SQL against `roles`/`role_permissions` (see the Roles section
+above), with e2e coverage for the core-role-name protection.
 
 Still open, flagged so they aren't silently reintroduced or forgotten:
 
@@ -217,8 +245,19 @@ Still open, flagged so they aren't silently reintroduced or forgotten:
 9. `POST /super-admin/administrators` (added 2026-08-14) can *create* a
    staff account for any role and set its tenant link, but there's still
    no way to edit, deactivate, delete, or reassign one after creation, and
-   no rate limiting on the endpoint (same class of gap as #1). A
+   no rate limiting on the endpoint (same class of gap as #1) — unlike
+   roles (#10 below), administrators have no edit/delete path yet. A
    Hospital/Bank/Telecom/Insurance login with no tenant link set still
    gets a `403 Forbidden` from its dashboard rather than someone else's
    data or a silent empty result — that part of the design hasn't changed,
    only how the link gets set in the first place.
+10. `/super-admin/roles*` (added 2026-08-15) has no rate limiting either
+    (same class of gap as #1 and #9), and `PUT
+    /super-admin/roles/:id/permissions` replaces a role's entire
+    permission set on every call rather than diffing — a stale client
+    payload silently drops permissions another admin just added
+    concurrently (last write wins, no optimistic-locking/version check).
+    Deleting a role cascades its `role_permissions` rows at the DB level
+    (`ON DELETE CASCADE`) but is blocked at the service layer whenever
+    `member_roles` still references it, so no user is ever silently left
+    with a dangling role.
