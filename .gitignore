@@ -9,3 +9,7 @@ tujitunze.png
 BCO.*.png
 TANZANIA-MOBILE-JC*.png
 Eligibility+Verification*.webp
+
+# Installers accidentally downloaded to the repo root — not app assets,
+# and large enough to blow GitHub's 100MB per-file limit.
+*.deb
