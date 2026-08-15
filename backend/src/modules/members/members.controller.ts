@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { Throttle } from '@nestjs/throttler';
 
 import { MembersService } from './members.service';
 import { RegisterDto } from './dto/register.dto';
@@ -27,6 +28,9 @@ import type { AuthenticatedUser } from '../auth/jwt.strategy';
 export class MembersController {
   constructor(private readonly membersService: MembersService) {}
 
+  // 5/min per IP — registration is unauthenticated and NIDA/email-spam
+  // sensitive.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')
   async register(@Body() body: RegisterDto) {
     return this.membersService.register(body);
@@ -69,6 +73,9 @@ export class MembersController {
     return this.membersService.listDistrictsByRegion(regionId);
   }
 
+  // 10/min per IP — guards against linking-spam even though this route is
+  // authenticated.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('Member')
   @Post('phone-numbers')

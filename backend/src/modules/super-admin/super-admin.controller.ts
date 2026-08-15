@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, UseGuards, Req } from '@nestjs/common';
 import type { Request } from 'express';
+import { Throttle } from '@nestjs/throttler';
 
 import { SuperAdminService } from './super-admin.service';
 import { CreateAdministratorDto } from './dto/create-administrator.dto';
@@ -25,6 +26,9 @@ export class SuperAdminController {
     return this.superAdminService.listAdministrators();
   }
 
+  // 20/min per IP — a Super-admin session is a smaller attack surface than
+  // an unauthenticated endpoint, but still a scripting/abuse target.
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('administrators')
   async createAdministrator(
     @Body() body: CreateAdministratorDto,

@@ -175,9 +175,11 @@ a default.
 ### 5. Deployment
 - CORS allowlist stays explicit (see `backend/src/main.ts`) — never wildcard
   origins once real user data is involved.
-- Security headers (e.g. `helmet`) and rate limiting on public endpoints
-  (`/auth/login`, `/members/register`) are required before any non-local
-  deployment — currently absent, tracked as a gap.
+- Security headers (e.g. `helmet`) are required before any non-local
+  deployment — currently absent, tracked as a gap. Rate limiting on
+  `/auth/login`, `/members/register`, and other write endpoints is now in
+  place (`@nestjs/throttler`, see Known Security Gaps), but its in-memory
+  storage needs revisiting before a horizontally-scaled deployment.
 - HTTPS only outside local dev.
 
 ### 6. Maintenance
@@ -203,16 +205,25 @@ empty module stub; the `Super-admin` role row (previously believed
 unseeded) was confirmed already present in the live database — no seed
 migration was actually needed; Super-admin can now provision a staff
 account for any role via `POST /super-admin/administrators` instead of a
-hand-written SQL `INSERT`; and Super-admin can now create/rename/delete
+hand-written SQL `INSERT`; Super-admin can now create/rename/delete
 roles and edit their permission sets via `/super-admin/roles` instead of
 hand-written SQL against `roles`/`role_permissions` (see the Roles section
-above), with e2e coverage for the core-role-name protection.
+above), with e2e coverage for the core-role-name protection; and
+`@nestjs/throttler` (added 2026-08-15) now rate-limits `/auth/login`,
+`/members/register`, `/members/phone-numbers`, `/super-admin/
+administrators`, and `/super-admin/roles*` (`ThrottlerModule.forRoot` in
+`app.module.ts` sets a generous global default, `@Throttle(...)` on each
+of those handlers/controllers sets the tighter per-route limit), proven
+by `backend/test/rate-limiting.e2e-spec.ts` actually hitting each limit
+and asserting the `429`, not just checking the decorator is present.
 
 Still open, flagged so they aren't silently reintroduced or forgotten:
 
-1. No rate limiting on `/auth/login`, `/members/register`, or (newly added)
-   `/members/phone-numbers` — brute force / registration / linking-spam
-   risk.
+1. `@nestjs/throttler`'s in-memory storage is per-process — fine for this
+   single-instance app, but won't share rate-limit state across multiple
+   backend instances behind a load balancer. Revisit with a shared store
+   (e.g. Redis) before any horizontally-scaled deployment. Limits are also
+   currently fixed in code, not configurable per-environment via env vars.
 2. No `helmet`/security headers configured in `main.ts`.
 3. `database.config.ts` falls back to a default DB password if
    `DB_PASSWORD` is unset.
@@ -244,16 +255,13 @@ Still open, flagged so they aren't silently reintroduced or forgotten:
    mobile-money/bank integration sits in front of it.
 9. `POST /super-admin/administrators` (added 2026-08-14) can *create* a
    staff account for any role and set its tenant link, but there's still
-   no way to edit, deactivate, delete, or reassign one after creation, and
-   no rate limiting on the endpoint (same class of gap as #1) — unlike
-   roles (#10 below), administrators have no edit/delete path yet. A
-   Hospital/Bank/Telecom/Insurance login with no tenant link set still
+   no way to edit, deactivate, delete, or reassign one after creation —
+   unlike roles (#10 below), administrators have no edit/delete path yet.
+   A Hospital/Bank/Telecom/Insurance login with no tenant link set still
    gets a `403 Forbidden` from its dashboard rather than someone else's
    data or a silent empty result — that part of the design hasn't changed,
    only how the link gets set in the first place.
-10. `/super-admin/roles*` (added 2026-08-15) has no rate limiting either
-    (same class of gap as #1 and #9), and `PUT
-    /super-admin/roles/:id/permissions` replaces a role's entire
+10. `PUT /super-admin/roles/:id/permissions` replaces a role's entire
     permission set on every call rather than diffing — a stale client
     payload silently drops permissions another admin just added
     concurrently (last write wins, no optimistic-locking/version check).
@@ -261,3 +269,16 @@ Still open, flagged so they aren't silently reintroduced or forgotten:
     (`ON DELETE CASCADE`) but is blocked at the service layer whenever
     `member_roles` still references it, so no user is ever silently left
     with a dangling role.
+11. None of the e2e spec files under `backend/test/` apply the global
+    `ValidationPipe` that `main.ts` wires up for the real app — they only
+    call `createNestApplication()` + `app.init()`, so class-validator
+    never runs and a request with a missing/malformed body reaches the
+    service layer unchecked instead of getting a `400`. This was only
+    caught by accident while writing `rate-limiting.e2e-spec.ts` (an empty
+    `POST /super-admin/roles` body 500'd in-process instead of the `400`
+    the real running server correctly returns). That one spec now sets up
+    its own `useGlobalPipes(...)` to match `main.ts`; the other four spec
+    files still don't, so a DTO validation bug could pass their e2e suite
+    while still being broken in production. Worth fixing once, in a
+    shared test bootstrap helper, rather than copy-pasting the pipe setup
+    into every spec file as it's noticed.
