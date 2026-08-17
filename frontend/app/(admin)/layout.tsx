@@ -4,7 +4,7 @@ import DashboardLayout from "@/components/dashboard/DashboardLayout";
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/admin/dashboard" },
   { label: "Members", href: "/members" },
-  { label: "Hospitals", href: "/hospitals" },
+  { label: "Hospitals", href: "/admin/hospitals" },
   { label: "Audit Logs", href: "/audit-logs" },
 ];
 

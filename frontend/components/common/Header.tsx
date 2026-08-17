@@ -1,13 +1,44 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/lib/hooks/useAuth";
+import { getAccessToken } from "@/lib/utils/permissions";
 
 export default function Header() {
   const router = useRouter();
-  const { isAuthenticated, firstName, logout } = useAuth();
+  const { isAuthenticated, roles, firstName, logout } = useAuth();
+
+  const [needsMembershipCompletion, setNeedsMembershipCompletion] =
+    useState(false);
+
+  // Registration only ever collects name/NIDA/phone/password — `region` is
+  // set solely by the onboarding/mobile-money form's PATCH /members/me
+  // (see MobileMoneyAccountForm.tsx), so its presence is a reliable signal
+  // that a member has already been through onboarding at least once. A
+  // Member who hasn't yet gets a "Complete Membership" entry here instead
+  // of being redirected straight into that form after login.
+  useEffect(() => {
+    if (!isAuthenticated || !roles.includes("Member")) {
+      setNeedsMembershipCompletion(false);
+      return;
+    }
+
+    const token = getAccessToken();
+
+    if (!token) {
+      return;
+    }
+
+    fetch("http://localhost:3002/members/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((profile) => setNeedsMembershipCompletion(!!profile && !profile.region))
+      .catch(() => setNeedsMembershipCompletion(false));
+  }, [isAuthenticated, roles]);
 
   const handleLogout = () => {
     logout();
@@ -121,6 +152,15 @@ export default function Header() {
               >
 
                 <div className="rounded-lg border border-gray-100 bg-white py-2 shadow-xl">
+
+                  {needsMembershipCompletion && (
+                    <Link
+                      href="/onboarding/mobile-money"
+                      className="block px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50"
+                    >
+                      Complete Membership
+                    </Link>
+                  )}
 
                   <Link
                     href="/profile"

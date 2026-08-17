@@ -11,12 +11,18 @@ import { TopUpWalletDto } from './dto/top-up-wallet.dto';
 import { PhoneNumber } from '../members/entities/phone-number.entity';
 import { MemberBankAccount } from '../members/entities/bank-account.entity';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { NotificationsService } from '../notifications/notifications.service';
+
+function formatTsh(amount: number): string {
+  return `TSh ${amount.toLocaleString('en-TZ', { minimumFractionDigits: 2 })}`;
+}
 
 @Injectable()
 export class WalletsService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly auditLogsService: AuditLogsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   private async getOrCreateWallet(
@@ -106,11 +112,17 @@ export class WalletsService {
       // No live payment gateway is integrated yet (see CLAUDE.md known
       // gaps) — this credits the wallet ledger directly rather than
       // capturing a real mobile-money/bank debit. Real settlement is a
-      // separate, larger integration.
+      // separate, larger integration. The system processes a top-up
+      // synchronously, so there is no persisted "pending"/"failed" state
+      // for a contribution — it either fails outright (thrown above) or
+      // this row exists as completed.
+      const transactionReference = `CT-${Date.now().toString(36).toUpperCase()}-${memberId}`;
+
       const transaction = manager.create(WalletTransaction, {
         walletId: wallet.walletId,
         transactionType: 'Top Up',
         amount: data.amount,
+        transactionReference,
         remarks: `Top-up via ${sourceDescription}`,
       });
 
@@ -132,6 +144,13 @@ export class WalletsService {
         ipAddress,
       });
 
+      await this.notificationsService.create(manager, {
+        memberId,
+        notificationType: 'Contribution',
+        title: 'Contribution received',
+        message: `${formatTsh(data.amount)} was added to your Health Wallet via ${sourceDescription}. Reference: ${transactionReference}.`,
+      });
+
       return {
         walletId: savedWallet.walletId,
         walletNumber: savedWallet.walletNumber,
@@ -140,10 +159,46 @@ export class WalletsService {
         transaction: {
           walletTransactionId: savedTransaction.walletTransactionId,
           amount: savedTransaction.amount,
+          transactionReference: savedTransaction.transactionReference,
           remarks: savedTransaction.remarks,
           transactionDate: savedTransaction.transactionDate,
         },
       };
     });
+  }
+
+  // Backs both the "Contribution" history view and the general
+  // "Transaction History" page — today every row is a completed top-up
+  // (see the note in topUp() above), so there's no status filter; once a
+  // real levy engine writes other transaction types this can grow one.
+  async listTransactions(memberId: number, page: number, pageSize: number) {
+    const wallet = await this.dataSource.transaction((manager) =>
+      this.getOrCreateWallet(manager, memberId),
+    );
+
+    const [items, total] = await this.dataSource.manager.findAndCount(
+      WalletTransaction,
+      {
+        where: { walletId: wallet.walletId },
+        order: { transactionDate: 'DESC' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      },
+    );
+
+    const sumRow = await this.dataSource
+      .createQueryBuilder()
+      .select('COALESCE(SUM(amount), 0)', 'sum')
+      .from(WalletTransaction, 'wt')
+      .where('wt.wallet_id = :walletId', { walletId: wallet.walletId })
+      .getRawOne<{ sum: string }>();
+
+    return {
+      items,
+      total,
+      totalAmount: Number(sumRow?.sum ?? 0),
+      page,
+      pageSize,
+    };
   }
 }

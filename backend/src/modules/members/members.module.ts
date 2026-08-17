@@ -8,11 +8,13 @@ import { MemberBankAccount } from './entities/bank-account.entity';
 import { MembersController } from './members.controller';
 import { MembersService } from './members.service';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, PhoneNumber, MemberBankAccount]),
     AuditLogsModule,
+    NotificationsModule,
   ],
 
   controllers: [MembersController],

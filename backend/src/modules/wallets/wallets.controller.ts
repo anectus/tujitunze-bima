@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  DefaultValuePipe,
+  Get,
+  ParseIntPipe,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request } from 'express';
 
 import { WalletsService } from './wallets.service';
@@ -18,6 +28,15 @@ export class WalletsController {
   @Get()
   async get(@CurrentUser() user: AuthenticatedUser) {
     return this.walletsService.getWallet(user.userId);
+  }
+
+  @Get('transactions')
+  async transactions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('pageSize', new DefaultValuePipe(20), ParseIntPipe) pageSize: number,
+  ) {
+    return this.walletsService.listTransactions(user.userId, page, pageSize);
   }
 
   @Post('topup')

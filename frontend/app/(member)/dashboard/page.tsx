@@ -1,91 +1,153 @@
 
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
-import { ACCESS_TOKEN_STORAGE_KEY } from "@/lib/utils/permissions";
+import { getAccessToken } from "@/lib/utils/permissions";
+import Header from "@/components/common/Header";
 import StatusBadge from "@/components/common/StatusBadge";
 
-export default function DashboardPage() {
-  const router = useRouter();
+interface DashboardSection {
+  href: string;
+  title: string;
+  description: string;
+}
 
-  const handleLogout = () => {
-    localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
-    router.push("/login");
-  };
+// Mirrors the 9-section Member Dashboard spec: My Profile, My Membership,
+// Contribution, Health Fund Status, Healthcare Services, Hospital
+// Verification, Claims, Notifications, Transaction History. "My
+// Membership" and "Health Fund Status" both land on /membership since
+// GET /members/membership already combines them into one summary.
+const SECTIONS: DashboardSection[] = [
+  {
+    href: "/profile",
+    title: "My Profile",
+    description: "Personal information, phone numbers, and bank accounts.",
+  },
+  {
+    href: "/membership",
+    title: "My Membership",
+    description: "Member ID, status, registration date, and eligibility.",
+  },
+  {
+    href: "/wallet",
+    title: "Contribution",
+    description: "Make a contribution and see how much you've saved in total.",
+  },
+  {
+    href: "/membership",
+    title: "Health Fund Status",
+    description: "Your Health Wallet balance and insurance coverage status.",
+  },
+  {
+    href: "/hospitals",
+    title: "Healthcare Services",
+    description: "Browse hospitals in the Tujitunze network.",
+  },
+  {
+    href: "/verifications",
+    title: "Hospital Verification",
+    description: "History of hospital check-in verifications.",
+  },
+  {
+    href: "/insurance/claims",
+    title: "Claims",
+    description: "Track your submitted claims and their status.",
+  },
+  {
+    href: "/notifications",
+    title: "Notifications",
+    description: "Contribution, membership, and security alerts.",
+  },
+  {
+    href: "/wallet/transactions",
+    title: "Transaction History",
+    description: "Every contribution and wallet transaction, filterable.",
+  },
+];
+
+export default function DashboardPage() {
+  // null while loading — a Member who hasn't submitted the
+  // onboarding/mobile-money form yet (no `region` on their profile) shows
+  // as Inactive here instead of being redirected straight into that form;
+  // completing it lives in the account menu (top right) now.
+  const [membershipComplete, setMembershipComplete] = useState<boolean | null>(
+    null
+  );
+
+  useEffect(() => {
+    const token = getAccessToken();
+
+    if (!token) {
+      return;
+    }
+
+    fetch("http://localhost:3002/members/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((profile) => setMembershipComplete(!!profile && !!profile.region))
+      .catch(() => setMembershipComplete(false));
+  }, []);
 
   return (
-    <div className="min-h-screen bg-white py-12 px-4">
+    <>
+      <Header />
 
-      <div className="max-w-2xl mx-auto text-center">
+      <div className="min-h-screen bg-white pt-32 pb-12 px-4">
 
-        <div className="flex items-center justify-center gap-2">
-          <h1 className="text-3xl font-bold text-gray-900">
-            Welcome to Tujitunze
-          </h1>
+        <div className="max-w-4xl mx-auto text-center">
 
-          <StatusBadge domain="member" status="active" />
-        </div>
+          <div className="flex items-center justify-center gap-2">
+            <h1 className="text-3xl font-bold text-gray-900">
+              Welcome to Tujitunze
+            </h1>
 
-        <p className="mt-2 text-gray-600">
-          Your account is set up. The full dashboard is coming soon.
-        </p>
+            {membershipComplete !== null && (
+              <StatusBadge
+                domain="member"
+                status={membershipComplete ? "active" : "inactive"}
+              />
+            )}
+          </div>
 
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 text-left">
-
-          <Link
-            href="/wallet"
-            className="rounded-2xl border border-gray-100 bg-white p-6
-            shadow-md transition hover:shadow-xl hover:-translate-y-1"
-          >
-            <p className="text-lg font-bold text-gray-900">
-              Wallet
+          {membershipComplete === false && (
+            <p className="mt-2 text-gray-600">
+              Your membership isn&apos;t complete yet. Finish it anytime from
+              your account menu (top right) →{" "}
+              <span className="font-semibold text-gray-800">
+                Complete Membership
+              </span>
+              .
             </p>
-            <p className="mt-1 text-sm text-gray-600">
-              Check your balance and top up via mobile money.
-            </p>
-          </Link>
+          )}
 
-          <Link
-            href="/wallet/transactions"
-            className="rounded-2xl border border-gray-100 bg-white p-6
-            shadow-md transition hover:shadow-xl hover:-translate-y-1"
-          >
-            <p className="text-lg font-bold text-gray-900">
-              Wallet Transactions
-            </p>
-            <p className="mt-1 text-sm text-gray-600">
-              View your deposits, withdrawals, and transfers.
-            </p>
-          </Link>
+          <div className="mt-8 grid gap-4 text-left sm:grid-cols-2 lg:grid-cols-3">
 
-          <Link
-            href="/insurance/claims"
-            className="rounded-2xl border border-gray-100 bg-white p-6
-            shadow-md transition hover:shadow-xl hover:-translate-y-1"
-          >
-            <p className="text-lg font-bold text-gray-900">
-              Insurance Claims
-            </p>
-            <p className="mt-1 text-sm text-gray-600">
-              Track your submitted claims and coverage status.
-            </p>
-          </Link>
+            {SECTIONS.map((section) => (
+
+              <Link
+                key={section.title}
+                href={section.href}
+                className="rounded-2xl border border-gray-100 bg-white p-6
+                shadow-md transition hover:shadow-xl hover:-translate-y-1"
+              >
+                <p className="text-lg font-bold text-gray-900">
+                  {section.title}
+                </p>
+                <p className="mt-1 text-sm text-gray-600">
+                  {section.description}
+                </p>
+              </Link>
+
+            ))}
+
+          </div>
 
         </div>
-
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="mt-8 rounded-lg bg-blue-700 px-6 py-3
-          font-semibold text-white transition hover:bg-blue-800"
-        >
-          Log Out
-        </button>
 
       </div>
-
-    </div>
+    </>
   );
 }

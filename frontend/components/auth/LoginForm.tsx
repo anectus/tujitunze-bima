@@ -11,28 +11,6 @@ import {
   getStaffDashboardPath,
 } from "@/lib/utils/permissions";
 
-// Registration only ever collects name/NIDA/phone/password — `region` is
-// set solely by the onboarding/mobile-money form's PATCH /members/me
-// (see MobileMoneyAccountForm.tsx), so its presence is a reliable signal
-// that a member has already been through onboarding at least once.
-async function resolveMemberLandingPath(accessToken: string): Promise<string> {
-  try {
-    const response = await fetch("http://localhost:3002/members/me", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (!response.ok) {
-      return "/onboarding/mobile-money";
-    }
-
-    const profile = await response.json();
-
-    return profile.region ? "/dashboard" : "/onboarding/mobile-money";
-  } catch {
-    return "/onboarding/mobile-money";
-  }
-}
-
 export default function LoginForm() {
   const router = useRouter();
 
@@ -99,9 +77,12 @@ export default function LoginForm() {
       const payload = decodeAccessToken(data.accessToken);
       const staffDashboardPath = getStaffDashboardPath(payload?.roles ?? []);
 
-      router.push(
-        staffDashboardPath ?? (await resolveMemberLandingPath(data.accessToken))
-      );
+      // A Member always lands on their dashboard, whether or not
+      // onboarding (the mobile-money form) is complete — the dashboard
+      // itself shows Active/Inactive and the account menu (top right)
+      // carries the "Complete Membership" action, rather than forcing
+      // a redirect straight into that form.
+      router.push(staffDashboardPath ?? "/dashboard");
 
     } catch (error) {
       if (error instanceof Error) {

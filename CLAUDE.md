@@ -76,7 +76,115 @@ fields and a delete button, purely a UX mirror of the backend's guard, not
 a substitute for it. Covered by
 `backend/test/super-admin-roles.e2e-spec.ts`.
 
-Each role's frontend route group (`app/(admin)`, `(hospital)`, `(bank)`,
+As of 2026-08-17, the Member dashboard is a real 9-section hub instead of
+three quick links: My Profile, My Membership, Contribution, Health Fund
+Status, Healthcare Services, Hospital Verification, Claims, Notifications,
+and Transaction History (`(member)/dashboard/page.tsx`). All of it reads
+from tables `tujitunze.sql` already defined but that had no NestJS module
+behind them yet: `GET /members/membership` combines `users` +
+`health_wallets` + `member_insurance`/`insurance_plans` into one summary
+(member ID is computed as `TB` + zero-padded user id, not a stored
+column); `GET/PATCH /members/notifications*` is a new
+`NotificationsModule` (`backend/src/modules/notifications/`) that other
+modules write into transactionally — a wallet top-up, first-time
+onboarding completion, a new phone/bank link, a password change, and
+setting a primary phone (new: `PATCH /members/phone-numbers/:id/primary`)
+each create a real notification row, the same atomic-with-the-write
+pattern `AuditLogsService` established; `GET /members/hospitals` +
+`GET /members/hospitals/:id` is a read-only member-facing view of the
+same `hospitals` table Admin manages; `GET /members/insurance` and
+`GET /members/claims` read the member's own `member_insurance` and
+`healthcare_claims` rows. `GET /members/verifications` and the Claims
+list are genuinely real endpoints but will read back empty on a fresh
+DB — nothing writes to `healthcare_verifications` or creates a claim yet
+(that's a Hospital-side check-in/claim-filing flow that doesn't exist),
+same honest gap as `telecom_contributions` below. `wallet/transactions`
+and `insurance/claims`/`insurance/plans` (previously hand-written sample
+data with an on-page disclaimer) now fetch these real endpoints instead.
+Member-facing `hospitals`, `hospitals/[id]`, `notifications`, and
+`membership` frontend pages replace what were `ComingSoonPage`
+placeholders; `hospitals/appointments`, `wallet/withdraw`,
+`wallet/transfer`, and everything under `telecom/*` are still
+placeholders — no backend exists for appointments, withdrawals/transfers,
+or telecom purchases (that last one is the unbuilt micro-levy engine).
+
+As of 2026-08-17, the Telecom staff dashboard grew from one summary
+endpoint into a real multi-page module (`backend/src/modules/telecom/`),
+backed by migration `database/migrations/0005_telecom_dashboard.sql`
+(new columns on `telecom_operators` for contact info + API/webhook
+credentials, plus `contribution_rules` — seeded with the documented
+default levy rates — `telecom_reconciliation_runs`/`_records`, and
+`api_access_logs`). All of it is tenant-scoped the same way the original
+`GET /telecom/dashboard` was, via `users.telecom_operator_id`. Real:
+`GET /telecom/operator` (info, contact, credential status — never
+returns the key/secret itself), `PATCH /telecom/operator/contact`,
+`POST /telecom/operator/api-key/regenerate` (bcrypt-hashed at rest, full
+key shown exactly once), `POST /telecom/operator/webhook` (secret stored
+retrievable-plaintext, not hashed — HSIMS would need the raw value to
+sign outgoing deliveries with it; flagged below as a known gap, not a
+pattern to copy), `POST /telecom/operator/connection-test` (a real
+outbound HTTP call to the operator's `api_endpoint`, logged to
+`api_access_logs`), `GET /telecom/members` (roster scoped by phone
+number's operator), `GET /telecom/contributions` (+ `/export` CSV,
+status-filterable — also backs the Successful/Failed Transactions
+views), `GET /telecom/contribution-rules` (read-only for Telecom —
+editing is a deliberately deferred Admin/Super-admin decision),
+`POST /telecom/reconciliation/runs` (upload the operator's own record
+batch, matched against `telecom_contributions` by reference+amount) +
+`GET /telecom/reconciliation/runs[/:id]`, `GET /telecom/reports`
+(daily/weekly/monthly contribution aggregation), and
+`GET /telecom/activity-logs` / `GET /telecom/api-access-logs`. Still
+placeholder: an inbound webhook-receipt endpoint that would actually
+*use* the API key (credential issuance is built, nothing consumes it
+yet — deliberately not built alongside this pass, since that endpoint
+would create real `telecom_contributions`/wallet-affecting writes and
+deserves its own threat-modeling pass, not a side effect of a dashboard
+task); authentication/login-attempt logging (the `sessions` table exists
+in schema but nothing writes to it, system-wide, not just for Telecom);
+and a rolled-up multi-run reconciliation trend report (today's
+Reconciliation Report just links to the run-by-run history page).
+Frontend at `(telecom)/telecom/{operator,members,contributions,
+contribution-rules,reconciliation,reports,audit-logs}` — all
+`/telecom/...`-prefixed from the start, unlike the Member-dashboard pass
+which hit the bare-path collision live (see above); this one avoided it
+by not reusing the old bare `customers`/`transactions`/`payments`/
+`reconciliation`/`reports`/`settings` stub folders.
+
+As of 2026-08-17, the Bank staff dashboard grew the same way, via
+`backend/src/modules/bank/` and migration `database/migrations/
+0006_bank_dashboard.sql`. It mirrors Telecom's shared pieces exactly
+(contact info, API/webhook credentials with the same plaintext-secret
+caveat, connection testing, reconciliation, reports, audit logs — see
+Known Security Gap #12, which now covers both) but also introduces
+genuinely new territory the Telecom pass didn't need: HSIMS's own
+operational accounts at the bank. `bank_fund_accounts` holds one ledger
+row per (bank, account type) — Settlement / Health Fund / Reserve,
+lazily created the same way `health_wallets` is — with `balance` and
+`reserved_balance` columns; `bank_fund_transfers` is the append-only
+ledger of deposits/withdrawals against them. `settlements` records a
+payout to a Telecom or Hospital partner: creating one reserves the
+amount from the Settlement account's `reserved_balance` (status
+`Pending`), and `PATCH /bank/settlements/:id/complete` is what actually
+debits `balance` and writes the `Settlement Out` transfer row (status
+`Completed`) — verified end-to-end against a real running instance,
+including that over-committing past the available balance correctly
+`400`s. Like `health_wallets`, this is ledger/bookkeeping only, not a
+live payment rail — see Known Security Gap #8. `bank_transactions`
+(Deposits/Withdrawals/Transactions) still has no writer — no Member-side
+"request a bank withdrawal" flow exists — so `PATCH /bank/transactions/
+:id/status` (the withdrawal-approval action) is real and tenant-checked
+but has nothing to act on yet, same honest shape as Telecom's contribution
+transactions. Bank's reconciliation does a three-way match (`Matched` /
+`Discrepancy` — reference matches but amount doesn't / `Unmatched`)
+rather than Telecom's binary one, since the dashboard spec calls out
+Discrepancies as their own concept. One tenant-isolation bug was caught
+and fixed before shipping: `listActivityLogs`'s first draft filtered
+`audit_logs` by `affected_record_id` for `settlements`/`bank_transactions`
+rows without checking those records actually belonged to *this* bank
+(that id isn't a bank id) — fixed to match Telecom's narrower, safe
+shape (own profile changes + this staff member's own actions only).
+
+Each role's frontend route group (`app/(admin)`, `(hospital)`, `(bank)`, (`app/(admin)`, `(hospital)`, `(bank)`,
 `(telecom)`, `(super-admin)`, `(insurance)`, `(member)`) does have a
 client-side gate now: `components/auth/ProtectedRoute.tsx` (using
 `lib/hooks/useAuth.ts` / `lib/utils/permissions.ts`) wraps each
@@ -115,8 +223,8 @@ same collision is latent there too (two role groups both adding, say, a
 | `Admin` | Internal Tujitunze staff | `(admin)` — members, users, claims, transactions, hospitals, banks, telecom, reports, audit-logs, settings; dashboard at `/admin/dashboard` | Operational oversight across members: user/claim/transaction management, reviewing audit logs — not the same as `Super-admin` (system-level config) |
 | `Hospital` | Staff at a partner hospital | `(hospital)` — dashboard at `/hospital/dashboard` (only real page so far); patients, claims, billing, appointments, staff, reports, settings folders still empty | Their own hospital's patients/claims/billing/staff only — a hospital must never see another hospital's claims (enforced today via `users.hospital_id` scoping in `hospital.service.ts`, and tested in `backend/test/role-dashboards.e2e-spec.ts`) |
 | `Insurance` | Staff at an insurance provider | `(insurance)` — dashboard at `/insurance/dashboard` (only page; route group didn't exist before 2026-08-14) | Managing their own plans and reviewing claims routed to them |
-| `Bank` | Staff at a partner bank / bank integration | `(bank)` — dashboard at `/bank/dashboard` (only real page so far); accounts, customers, transactions, transfers, reconciliation, reports, settings folders still empty | Their own bank's linked accounts/transactions — same cross-tenant boundary concern as Hospital |
-| `Telecom` | Staff at a partner telecom operator | `(telecom)` — dashboard at `/telecom/dashboard` (only real page so far); customers, transactions, payments, reconciliation, reports, settings folders still empty | Their own operator's contribution/levy data only |
+| `Bank` | Staff at a partner bank / bank integration | `(bank)` — real pages now at `/bank/dashboard`, `/bank/profile`, `/bank/fund-accounts`, `/bank/transactions`, `/bank/settlements`, `/bank/reconciliation[/:id]`, `/bank/reports`, `/bank/audit-logs` (all `/bank/...`-prefixed; the old bare `accounts`/`customers`/`transactions`/`transfers`/`reconciliation`/`reports`/`settings` folders are untouched empty stubs, not reused) | Their own bank's linked accounts/transactions, plus HSIMS's own operational fund accounts and settlements at this bank — same cross-tenant boundary concern as Hospital |
+| `Telecom` | Staff at a partner telecom operator | `(telecom)` — real pages now at `/telecom/dashboard`, `/telecom/operator`, `/telecom/members`, `/telecom/contributions`, `/telecom/contribution-rules`, `/telecom/reconciliation[/:id]`, `/telecom/reports`, `/telecom/audit-logs` (all `/telecom/...`-prefixed per the collision rule above — the old bare `customers`/`transactions`/`payments`/`reconciliation`/`reports`/`settings` folders are untouched empty stubs, not reused) | Their own operator's contribution/levy data, member roster, API credentials, and reconciliation only |
 | `Super-admin` | Platform owner/operator | `(super-admin)` — dashboard at `/super-admin/dashboard`, staff provisioning at `/super-admin/administrators`, roles/permissions catalog at `/super-admin/roles`; integrations, system, audit-logs, settings folders still empty | System-wide configuration, managing other Admins, integrations — role is seeded (`role_id 7`); can create a staff account (any role) via `/super-admin/administrators` and manage the roles/permissions catalog via `/super-admin/roles` (create/rename/delete a role, assign its permissions) — the seven core role names can't be renamed or deleted |
 
 ## Secure Software Development Life Cycle (SSDLC)
@@ -252,7 +360,12 @@ Still open, flagged so they aren't silently reintroduced or forgotten:
    stubs), so a top-up today is trusted, unauthenticated-by-a-third-party
    ledger math, not a real funds movement. Treat this as the wallet's
    internal accounting layer, not a payment feature, until a real
-   mobile-money/bank integration sits in front of it.
+   mobile-money/bank integration sits in front of it. The same caveat now
+   also applies to Bank's `bank_fund_accounts`/`bank_fund_transfers`/
+   `settlements` (added 2026-08-17, migration 0006) — Bank staff record
+   deposits/withdrawals/settlements as bookkeeping entries through
+   `/bank/fund-accounts` and `/bank/settlements`; nothing actually moves
+   money at a real bank.
 9. `POST /super-admin/administrators` (added 2026-08-14) can *create* a
    staff account for any role and set its tenant link, but there's still
    no way to edit, deactivate, delete, or reassign one after creation —
@@ -282,3 +395,14 @@ Still open, flagged so they aren't silently reintroduced or forgotten:
     while still being broken in production. Worth fixing once, in a
     shared test bootstrap helper, rather than copy-pasting the pipe setup
     into every spec file as it's noticed.
+12. `telecom_operators.webhook_secret` (added 2026-08-17, migration 0005)
+    and `banks.webhook_secret` (added 2026-08-17, migration 0006) are
+    stored retrievable — not bcrypt-hashed like `api_key_hash` or
+    passwords — because HSIMS is meant to be the one signing outgoing
+    webhook deliveries with it, which needs the raw value on read, not
+    just the ability to verify it. That's a real plaintext-at-rest gap;
+    move it to an encrypted/secrets-manager design before any non-local
+    deployment, same caveat as `DB_PASSWORD`'s insecure fallback (#3).
+    No endpoint reads or uses either secret to sign anything yet —
+    nothing dispatches outgoing webhooks — so the immediate exposure is
+    low, but the storage design should be fixed before that changes.

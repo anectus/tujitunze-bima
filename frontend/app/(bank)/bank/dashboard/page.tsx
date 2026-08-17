@@ -1,28 +1,31 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { getAccessToken } from "@/lib/utils/permissions";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import StatisticCard from "@/components/cards/StatisticCard";
 
-interface BankTransaction {
-  transactionId: number;
-  reference: string;
-  type: string;
-  amount: number;
-  status: string;
-  date: string;
-  accountNumber: string;
-}
-
 interface BankDashboardData {
   bank: { name: string | null; status: string | null };
   linkedAccountCount: number;
-  transactionCount: number;
-  transactionTotal: number;
-  recentTransactions: BankTransaction[];
+  totalFunds: number;
+  todayDeposits: number;
+  todayWithdrawals: number;
+  pendingSettlements: number;
+  completedSettlements: number;
+  reconciliationStatus: {
+    runId: number;
+    matchedCount: number;
+    unmatchedCount: number;
+    runDate: string;
+  } | null;
+}
+
+function formatTsh(amount: number) {
+  return `TSh ${Number(amount).toLocaleString("en-TZ")}`;
 }
 
 export default function BankDashboardPage() {
@@ -97,59 +100,39 @@ export default function BankDashboardPage() {
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 
-              <StatisticCard label="Linked Accounts" value={data.linkedAccountCount} />
-              <StatisticCard label="Total Transactions" value={data.transactionCount} />
+              <StatisticCard label="Total Funds" value={formatTsh(data.totalFunds)} />
+              <StatisticCard label="Today's Deposits" value={formatTsh(data.todayDeposits)} />
+              <StatisticCard label="Today's Withdrawals" value={formatTsh(data.todayWithdrawals)} />
+              <StatisticCard label="Pending Settlements" value={data.pendingSettlements} />
+              <StatisticCard label="Completed Settlements" value={data.completedSettlements} />
               <StatisticCard
-                label="Transaction Volume"
-                value={`TSh ${Number(data.transactionTotal).toLocaleString("en-TZ")}`}
+                label="Reconciliation Status"
+                value={
+                  data.reconciliationStatus
+                    ? `${data.reconciliationStatus.matchedCount} matched / ${data.reconciliationStatus.unmatchedCount} unmatched`
+                    : "Not yet run"
+                }
+                hint={
+                  data.reconciliationStatus
+                    ? `Run #${data.reconciliationStatus.runId}`
+                    : undefined
+                }
               />
 
             </div>
 
-            <div className="mt-8 overflow-x-auto rounded-2xl border border-gray-100 bg-white shadow-md">
-
-              <table className="w-full text-left text-sm">
-
-                <thead className="bg-gray-50 text-xs uppercase text-gray-500">
-                  <tr>
-                    <th className="px-6 py-3 font-semibold">Reference</th>
-                    <th className="px-6 py-3 font-semibold">Account</th>
-                    <th className="px-6 py-3 font-semibold">Type</th>
-                    <th className="px-6 py-3 font-semibold">Amount</th>
-                    <th className="px-6 py-3 font-semibold">Status</th>
-                    <th className="px-6 py-3 font-semibold">Date</th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-gray-100">
-
-                  {data.recentTransactions.length === 0 ? (
-                    <tr>
-                      <td className="px-6 py-4 text-gray-500" colSpan={6}>
-                        No transactions yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    data.recentTransactions.map((tx) => (
-                      <tr key={tx.transactionId}>
-                        <td className="px-6 py-4 font-medium text-gray-900">
-                          {tx.reference}
-                        </td>
-                        <td className="px-6 py-4 text-gray-600">{tx.accountNumber}</td>
-                        <td className="px-6 py-4 text-gray-600">{tx.type}</td>
-                        <td className="px-6 py-4 text-gray-600">{tx.amount}</td>
-                        <td className="px-6 py-4 text-gray-600">{tx.status}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-gray-600">
-                          {new Date(tx.date).toLocaleDateString("en-TZ")}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-
-                </tbody>
-
-              </table>
-
+            <div className="mt-8 flex flex-wrap gap-3 text-sm">
+              <Link href="/bank/fund-accounts" className="font-semibold text-blue-700 hover:text-blue-800">
+                Manage Fund Accounts →
+              </Link>
+              <span className="text-gray-300">|</span>
+              <Link href="/bank/settlements" className="font-semibold text-blue-700 hover:text-blue-800">
+                Settlements →
+              </Link>
+              <span className="text-gray-300">|</span>
+              <Link href="/bank/reconciliation" className="font-semibold text-blue-700 hover:text-blue-800">
+                Reconciliation →
+              </Link>
             </div>
 
           </>

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   ParseIntPipe,
   Patch,
   Post,
@@ -107,5 +108,62 @@ export class MembersController {
     @Req() request: Request,
   ) {
     return this.membersService.changePassword(user.userId, body, request.ip);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Member')
+  @Get('membership')
+  async membership(@CurrentUser() user: AuthenticatedUser) {
+    return this.membersService.getMembership(user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Member')
+  @Patch('phone-numbers/:id/primary')
+  async setPrimaryPhoneNumber(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Req() request: Request,
+  ) {
+    return this.membersService.setPrimaryPhoneNumber(
+      user.userId,
+      id,
+      request.ip,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Member')
+  @Get('hospitals')
+  async hospitals(@Query('search') search?: string) {
+    return this.membersService.listHospitals(search);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Member')
+  @Get('hospitals/:id')
+  async hospital(@Param('id', ParseIntPipe) id: number) {
+    return this.membersService.getHospital(id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Member')
+  @Get('insurance')
+  async insurance(@CurrentUser() user: AuthenticatedUser) {
+    return this.membersService.listInsurance(user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Member')
+  @Get('claims')
+  async claims(@CurrentUser() user: AuthenticatedUser) {
+    return this.membersService.listClaims(user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Member')
+  @Get('verifications')
+  async verifications(@CurrentUser() user: AuthenticatedUser) {
+    return this.membersService.listVerifications(user.userId);
   }
 }

@@ -51,11 +51,13 @@ function statusStyle(label: string, tone: StatusTone): StatusStyle {
 
 // Insurance claim status
 export const CLAIM_STATUS: Record<string, StatusStyle> = {
+  draft: statusStyle("Draft", "neutral"),
   submitted: statusStyle("Submitted", "info"),
   under_review: statusStyle("Under Review", "warning"),
   pending: statusStyle("Pending", "warning"),
   approved: statusStyle("Approved", "success"),
   rejected: statusStyle("Rejected", "danger"),
+  disputed: statusStyle("Disputed", "danger"),
 };
 
 // Insurance coverage / policy status

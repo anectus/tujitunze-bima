@@ -13,6 +13,11 @@ interface TelecomOperator {
   operator_name: string;
 }
 
+interface Bank {
+  bank_id: number;
+  bank_name: string;
+}
+
 interface PhoneNumber {
   phoneId: number;
   phoneNumber: string;
@@ -20,6 +25,17 @@ interface PhoneNumber {
   accountNumber: string | null;
   isPrimary: boolean;
   phoneStatus: string;
+}
+
+interface BankAccount {
+  memberBankAccountId: number;
+  bankId: number;
+  accountNumber: string;
+  accountHolderName: string;
+  accountType: string | null;
+  isPrimary: boolean;
+  accountStatus: string;
+  verificationStatus: string;
 }
 
 interface MemberProfile {
@@ -30,7 +46,10 @@ interface MemberProfile {
   email: string | null;
   nidaNumber: string;
   memberStatus: string;
+  emailVerified: boolean;
+  phoneVerified: boolean;
   phoneNumbers: PhoneNumber[];
+  bankAccounts: BankAccount[];
 }
 
 export default function ProfilePage() {
@@ -38,8 +57,10 @@ export default function ProfilePage() {
 
   const [profile, setProfile] = useState<MemberProfile | null>(null);
   const [operators, setOperators] = useState<TelecomOperator[]>([]);
+  const [banks, setBanks] = useState<Bank[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [settingPrimaryId, setSettingPrimaryId] = useState<number | null>(null);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -51,11 +72,12 @@ export default function ProfilePage() {
       }
 
       try {
-        const [profileResponse, operatorsResponse] = await Promise.all([
+        const [profileResponse, operatorsResponse, banksResponse] = await Promise.all([
           fetch("http://localhost:3002/members/me", {
             headers: { Authorization: `Bearer ${token}` },
           }),
           fetch("http://localhost:3002/members/telecom-operators"),
+          fetch("http://localhost:3002/members/banks"),
         ]);
 
         if (profileResponse.status === 401) {
@@ -76,6 +98,10 @@ export default function ProfilePage() {
         if (operatorsResponse.ok) {
           setOperators(await operatorsResponse.json());
         }
+
+        if (banksResponse.ok) {
+          setBanks(await banksResponse.json());
+        }
       } catch (err) {
         if (err instanceof Error) {
           setError(err.message);
@@ -90,9 +116,46 @@ export default function ProfilePage() {
     loadProfile();
   }, [router]);
 
+  // Update local state directly rather than refetching the whole profile —
+  // the new primary is already known from a successful PATCH.
+  const setPrimaryPhone = async (phoneId: number) => {
+    const token = getAccessToken();
+
+    if (!token) {
+      router.push("/login");
+      return;
+    }
+
+    setSettingPrimaryId(phoneId);
+
+    try {
+      await fetch(`http://localhost:3002/members/phone-numbers/${phoneId}/primary`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      setProfile((current) =>
+        current
+          ? {
+              ...current,
+              phoneNumbers: current.phoneNumbers.map((phone) => ({
+                ...phone,
+                isPrimary: phone.phoneId === phoneId,
+              })),
+            }
+          : current
+      );
+    } finally {
+      setSettingPrimaryId(null);
+    }
+  };
+
   const operatorName = (operatorId: number) =>
     operators.find((operator) => operator.operator_id === operatorId)
       ?.operator_name ?? "Unknown network";
+
+  const bankName = (bankId: number) =>
+    banks.find((bank) => bank.bank_id === bankId)?.bank_name ?? "Unknown bank";
 
   const fullName = profile
     ? [profile.firstName, profile.secondName, profile.surname]
@@ -172,7 +235,32 @@ export default function ProfilePage() {
                   </dd>
                 </div>
 
+                <div>
+                  <dt className="text-xs font-semibold uppercase text-gray-500">
+                    Email Verification
+                  </dt>
+                  <dd className="mt-1 text-gray-900">
+                    {profile.emailVerified ? "Verified" : "Not verified"}
+                  </dd>
+                </div>
+
+                <div>
+                  <dt className="text-xs font-semibold uppercase text-gray-500">
+                    Phone Verification
+                  </dt>
+                  <dd className="mt-1 text-gray-900">
+                    {profile.phoneVerified ? "Verified" : "Not verified"}
+                  </dd>
+                </div>
+
               </dl>
+
+              <Link
+                href="/onboarding/mobile-money"
+                className="mt-6 inline-block text-sm font-semibold text-blue-700 hover:text-blue-800"
+              >
+                Update permitted information →
+              </Link>
 
             </div>
 
@@ -216,15 +304,92 @@ export default function ProfilePage() {
                       </p>
                     </div>
 
-                    <span className="text-sm text-gray-500">
-                      {phone.phoneStatus}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-gray-500">
+                        {phone.phoneStatus}
+                      </span>
+
+                      {!phone.isPrimary && (
+                        <button
+                          type="button"
+                          onClick={() => setPrimaryPhone(phone.phoneId)}
+                          disabled={settingPrimaryId === phone.phoneId}
+                          className="text-xs font-semibold text-blue-700
+                          hover:text-blue-800 disabled:cursor-not-allowed
+                          disabled:opacity-50"
+                        >
+                          {settingPrimaryId === phone.phoneId ? "Setting..." : "Set as primary"}
+                        </button>
+                      )}
+                    </div>
 
                   </li>
 
                 ))}
 
               </ul>
+
+            </div>
+
+            {/* Bank accounts */}
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-md">
+
+              <div className="flex items-center justify-between">
+                <p className="text-lg font-bold text-gray-900">
+                  Bank Accounts
+                </p>
+
+                <Link
+                  href="/onboarding/mobile-money"
+                  className="text-sm font-semibold text-blue-700 hover:text-blue-800"
+                >
+                  + Add another
+                </Link>
+              </div>
+
+              {profile.bankAccounts.length === 0 ? (
+
+                <p className="mt-4 text-sm text-gray-500">
+                  No bank account linked yet.
+                </p>
+
+              ) : (
+
+                <ul className="mt-4 divide-y divide-gray-100">
+
+                  {profile.bankAccounts.map((account) => (
+
+                    <li
+                      key={account.memberBankAccountId}
+                      className="flex items-center justify-between py-3"
+                    >
+
+                      <div>
+                        <p className="font-semibold text-gray-900">
+                          {bankName(account.bankId)} · ····{account.accountNumber.slice(-4)}
+                          {account.isPrimary && (
+                            <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                              Primary
+                            </span>
+                          )}
+                        </p>
+
+                        <p className="text-sm text-gray-500">
+                          {account.accountHolderName}
+                        </p>
+                      </div>
+
+                      <span className="text-sm text-gray-500">
+                        {account.verificationStatus}
+                      </span>
+
+                    </li>
+
+                  ))}
+
+                </ul>
+
+              )}
 
             </div>
 

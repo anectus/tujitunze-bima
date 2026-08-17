@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -20,6 +21,64 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AddBankAccountDto } from './dto/add-bank-account.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { NotificationsService } from '../notifications/notifications.service';
+
+// TB + zero-padded 6-digit user id — computed on read rather than stored,
+// since the schema has no dedicated member-number column yet (see the
+// product-spec gap notes). Matches the "TB######" format members are
+// meant to be issued.
+function formatMemberId(userId: number): string {
+  return `TB${String(userId).padStart(6, '0')}`;
+}
+
+interface Hospital {
+  hospital_id: number;
+  hospital_name: string;
+  hospital_code: string | null;
+  location: string | null;
+  region: string | null;
+  district: string | null;
+  contact_phone: string | null;
+  status: string;
+}
+
+interface MemberInsurancePolicy {
+  member_insurance_id: number;
+  policy_number: string;
+  start_date: Date;
+  end_date: Date | null;
+  policy_status: string;
+  plan_id: number;
+  plan_name: string;
+  premium_amount: string | null;
+  coverage_amount: string | null;
+  provider_id: number;
+  provider_name: string;
+}
+
+interface MemberClaim {
+  claim_id: number;
+  claim_number: string;
+  claim_amount: string;
+  approved_amount: string | null;
+  claim_status: string;
+  claim_date: Date;
+  processed_date: Date | null;
+  remarks: string | null;
+  hospital_id: number;
+  hospital_name: string;
+}
+
+interface MemberVerification {
+  verification_id: number;
+  verification_method: string;
+  verification_result: string;
+  member_status: string | null;
+  verified_date: Date;
+  remarks: string | null;
+  hospital_id: number;
+  hospital_name: string;
+}
 
 interface TelecomOperator {
   operator_id: number;
@@ -49,6 +108,7 @@ export class MembersService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly auditLogsService: AuditLogsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // =====================================================
@@ -389,9 +449,13 @@ export class MembersService {
       throw new NotFoundException('Member not found');
     }
 
+    const bankAccounts = await this.dataSource.manager.find(MemberBankAccount, {
+      where: { memberId: userId },
+    });
+
     const { passwordHash: _passwordHash, ...safeUser } = user;
 
-    return safeUser;
+    return { ...safeUser, bankAccounts };
   }
 
   async updateProfile(userId: number, data: UpdateProfileDto) {
@@ -412,24 +476,36 @@ export class MembersService {
         )
       : null;
 
-    const user = await this.dataSource.manager.findOne(User, {
-      where: { userId },
+    return this.dataSource.transaction(async (manager) => {
+      const user = await manager.findOne(User, { where: { userId } });
+
+      if (!user) {
+        throw new NotFoundException('Member not found');
+      }
+
+      const wasOnboarded = !!user.region;
+
+      user.gender = data.gender;
+      user.dateOfBirth = dateOfBirth;
+      user.region = region.region_name;
+      user.district = district?.district_name ?? null;
+
+      const savedUser = await manager.save(User, user);
+
+      if (!wasOnboarded) {
+        await this.notificationsService.create(manager, {
+          memberId: userId,
+          notificationType: 'Membership',
+          title: 'Membership profile completed',
+          message:
+            'Your onboarding is complete. Your membership details are now up to date.',
+        });
+      }
+
+      const { passwordHash: _passwordHash, ...safeUser } = savedUser;
+
+      return safeUser;
     });
-
-    if (!user) {
-      throw new NotFoundException('Member not found');
-    }
-
-    user.gender = data.gender;
-    user.dateOfBirth = dateOfBirth;
-    user.region = region.region_name;
-    user.district = district?.district_name ?? null;
-
-    const savedUser = await this.dataSource.manager.save(User, user);
-
-    const { passwordHash: _passwordHash, ...safeUser } = savedUser;
-
-    return safeUser;
   }
 
   async listTelecomOperators() {
@@ -561,6 +637,13 @@ export class MembersService {
         ipAddress,
       });
 
+      await this.notificationsService.create(manager, {
+        memberId: userId,
+        notificationType: 'Security',
+        title: 'Phone number linked',
+        message: `${savedPhone.phoneNumber} (${operator.operator_name}) was linked to your account.`,
+      });
+
       return {
         phoneId: savedPhone.phoneId,
 
@@ -648,6 +731,13 @@ export class MembersService {
         ipAddress,
       });
 
+      await this.notificationsService.create(manager, {
+        memberId: userId,
+        notificationType: 'Security',
+        title: 'Bank account linked',
+        message: `A ${bank.bank_name} account ending ${accountNumber.slice(-4)} was linked to your account.`,
+      });
+
       return {
         memberBankAccountId: saved.memberBankAccountId,
         bankId: saved.bankId,
@@ -699,7 +789,303 @@ export class MembersService {
         ipAddress,
       });
 
+      await this.notificationsService.create(manager, {
+        memberId: userId,
+        notificationType: 'Security',
+        title: 'Password changed',
+        message: 'Your account password was changed successfully.',
+      });
+
       return { message: 'Password changed successfully.' };
     });
+  }
+
+  // =====================================================
+  // My Membership — combines user status, wallet, and insurance into the
+  // one summary the dashboard's "My Membership" / "Health Fund Status"
+  // cards render. Raw SQL (rather than injecting HealthWallet/insurance
+  // entities into this module) mirrors the existing cross-table read
+  // pattern already used above for telecom operators/banks/regions.
+  // =====================================================
+
+  async getMembership(userId: number) {
+    const user = await this.dataSource.manager.findOne(User, {
+      where: { userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Member not found');
+    }
+
+    const [walletRow] = await this.dataSource.query<
+      { balance: string; wallet_status: string }[]
+    >(
+      `SELECT balance, wallet_status FROM health_wallets WHERE member_id = $1 LIMIT 1`,
+      [userId],
+    );
+
+    const [contributionSummary] = await this.dataSource.query<
+      {
+        has_contributed: boolean;
+        last_contribution_date: Date | null;
+        total: string;
+      }[]
+    >(
+      `SELECT
+         COUNT(wt.*) > 0 AS has_contributed,
+         MAX(wt.transaction_date) AS last_contribution_date,
+         COALESCE(SUM(wt.amount), 0) AS total
+       FROM wallet_transactions wt
+       INNER JOIN health_wallets hw ON hw.wallet_id = wt.wallet_id
+       WHERE hw.member_id = $1`,
+      [userId],
+    );
+
+    const [activePolicy] = await this.dataSource.query<
+      {
+        policy_number: string;
+        policy_status: string;
+        plan_name: string;
+        provider_name: string;
+        coverage_amount: string | null;
+      }[]
+    >(
+      `SELECT
+         mi.policy_number,
+         mi.policy_status,
+         ip.plan_name,
+         ipr.provider_name,
+         ip.coverage_amount
+       FROM member_insurance mi
+       INNER JOIN insurance_plans ip ON ip.plan_id = mi.plan_id
+       INNER JOIN insurance_providers ipr ON ipr.provider_id = ip.provider_id
+       WHERE mi.member_id = $1
+         AND mi.policy_status = 'Active'
+       ORDER BY mi.start_date DESC
+       LIMIT 1`,
+      [userId],
+    );
+
+    // A member is treated as healthcare-eligible once an Admin has
+    // verified them (memberStatus = 'Active') — onboarding completion
+    // (region set) is a separate, frontend-tracked concept (see
+    // LoginForm/Header's "Complete Membership" flow) that doesn't by
+    // itself grant eligibility.
+    const healthcareEligible = user.memberStatus === 'Active';
+
+    return {
+      memberId: formatMemberId(user.userId),
+      memberStatus: user.memberStatus,
+      registrationDate: user.createdAt,
+      onboardingComplete: !!user.region,
+      healthcareEligible,
+      fundStatus: {
+        balance: walletRow ? Number(walletRow.balance) : 0,
+        walletStatus: walletRow ? walletRow.wallet_status : 'Not yet opened',
+      },
+      contributionStatus: {
+        hasContributed: contributionSummary?.has_contributed ?? false,
+        lastContributionDate:
+          contributionSummary?.last_contribution_date ?? null,
+        totalContributed: contributionSummary
+          ? Number(contributionSummary.total)
+          : 0,
+      },
+      coverage: activePolicy
+        ? {
+            policyNumber: activePolicy.policy_number,
+            status: activePolicy.policy_status,
+            planName: activePolicy.plan_name,
+            providerName: activePolicy.provider_name,
+            coverageAmount: activePolicy.coverage_amount
+              ? Number(activePolicy.coverage_amount)
+              : null,
+          }
+        : null,
+    };
+  }
+
+  // =====================================================
+  // Manage phone numbers — set primary. Adding was already supported;
+  // this is the other "Manage phone numbers" action from the Member
+  // dashboard spec. Removing a linked number is deliberately left out —
+  // it's a contribution source (see wallet top-up), so unlinking it needs
+  // its own care later rather than a same-pass addition here.
+  // =====================================================
+
+  async setPrimaryPhoneNumber(
+    userId: number,
+    phoneId: number,
+    ipAddress: string | null = null,
+  ) {
+    return this.dataSource.transaction(async (manager) => {
+      const phone = await manager.findOne(PhoneNumber, { where: { phoneId } });
+
+      if (!phone) {
+        throw new NotFoundException('Phone number not found');
+      }
+
+      if (phone.userId !== userId) {
+        throw new ForbiddenException(
+          'That phone number does not belong to you',
+        );
+      }
+
+      if (phone.isPrimary) {
+        return phone;
+      }
+
+      await manager.update(
+        PhoneNumber,
+        { userId, isPrimary: true },
+        { isPrimary: false },
+      );
+
+      phone.isPrimary = true;
+
+      const saved = await manager.save(PhoneNumber, phone);
+
+      await this.auditLogsService.record(manager, {
+        memberId: userId,
+        actionType: 'phone_number.set_primary',
+        affectedTable: 'phone_numbers',
+        affectedRecordId: saved.phoneId,
+        newValue: { phoneNumber: saved.phoneNumber },
+        ipAddress,
+      });
+
+      await this.notificationsService.create(manager, {
+        memberId: userId,
+        notificationType: 'Security',
+        title: 'Primary phone number updated',
+        message: `${saved.phoneNumber} is now your primary phone number.`,
+      });
+
+      return saved;
+    });
+  }
+
+  // =====================================================
+  // Healthcare Services — member-facing read of the hospital directory
+  // Admin already manages (see admin/entities/hospital.entity.ts). Only
+  // Active hospitals are shown; raw SQL avoids registering that entity
+  // in a second module just for a read.
+  // =====================================================
+
+  async listHospitals(search?: string) {
+    return this.dataSource.query<Hospital[]>(
+      `SELECT hospital_id, hospital_name, hospital_code, location, region, district, contact_phone, status
+       FROM hospitals
+       WHERE status = 'Active'
+         AND (
+           $1::text IS NULL
+           OR hospital_name ILIKE '%' || $1 || '%'
+           OR region ILIKE '%' || $1 || '%'
+           OR district ILIKE '%' || $1 || '%'
+         )
+       ORDER BY hospital_name`,
+      [search?.trim() || null],
+    );
+  }
+
+  async getHospital(hospitalId: number) {
+    const [hospital] = await this.dataSource.query<Hospital[]>(
+      `SELECT hospital_id, hospital_name, hospital_code, location, region, district, contact_phone, status
+       FROM hospitals
+       WHERE hospital_id = $1
+         AND status = 'Active'
+       LIMIT 1`,
+      [hospitalId],
+    );
+
+    if (!hospital) {
+      throw new NotFoundException('Hospital not found');
+    }
+
+    return hospital;
+  }
+
+  // =====================================================
+  // My Insurance — the member's own policies (member_insurance), each
+  // joined out to its plan and provider. Backs the "Health Fund Status"
+  // coverage bullets and the insurance/plans frontend page.
+  // =====================================================
+
+  async listInsurance(userId: number) {
+    return this.dataSource.query<MemberInsurancePolicy[]>(
+      `SELECT
+         mi.member_insurance_id,
+         mi.policy_number,
+         mi.start_date,
+         mi.end_date,
+         mi.policy_status,
+         ip.plan_id,
+         ip.plan_name,
+         ip.premium_amount,
+         ip.coverage_amount,
+         ipr.provider_id,
+         ipr.provider_name
+       FROM member_insurance mi
+       INNER JOIN insurance_plans ip ON ip.plan_id = mi.plan_id
+       INNER JOIN insurance_providers ipr ON ipr.provider_id = ip.provider_id
+       WHERE mi.member_id = $1
+       ORDER BY mi.start_date DESC`,
+      [userId],
+    );
+  }
+
+  // =====================================================
+  // Claims — the member's own healthcare_claims, joined out to the
+  // hospital name. Read-only: submitting a new claim isn't in the
+  // Member dashboard spec (claims are raised by Hospital-side staff),
+  // and there's no Hospital-facing endpoint that writes here yet either.
+  // =====================================================
+
+  async listClaims(userId: number) {
+    return this.dataSource.query<MemberClaim[]>(
+      `SELECT
+         c.claim_id,
+         c.claim_number,
+         c.claim_amount,
+         c.approved_amount,
+         c.claim_status,
+         c.claim_date,
+         c.processed_date,
+         c.remarks,
+         h.hospital_id,
+         h.hospital_name
+       FROM healthcare_claims c
+       INNER JOIN hospitals h ON h.hospital_id = c.hospital_id
+       WHERE c.member_id = $1
+       ORDER BY c.claim_date DESC`,
+      [userId],
+    );
+  }
+
+  // =====================================================
+  // Hospital Verification — the member's own healthcare_verifications,
+  // joined out to the hospital name. Nothing writes to this table yet
+  // (that's a Hospital-role check-in flow that doesn't exist), so this
+  // will read back empty until that's built — same honest-gap shape as
+  // Claims above.
+  // =====================================================
+
+  async listVerifications(userId: number) {
+    return this.dataSource.query<MemberVerification[]>(
+      `SELECT
+         v.verification_id,
+         v.verification_method,
+         v.verification_result,
+         v.member_status,
+         v.verified_date,
+         v.remarks,
+         h.hospital_id,
+         h.hospital_name
+       FROM healthcare_verifications v
+       INNER JOIN hospitals h ON h.hospital_id = v.hospital_id
+       WHERE v.member_id = $1
+       ORDER BY v.verified_date DESC`,
+      [userId],
+    );
   }
 }

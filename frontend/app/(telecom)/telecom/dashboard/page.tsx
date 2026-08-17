@@ -19,8 +19,11 @@ interface TelecomContribution {
 interface TelecomDashboardData {
   operator: { name: string | null; status: string | null };
   linkedPhoneCount: number;
+  registeredMemberCount: number;
   contributionCount: number;
   contributionTotal: number;
+  today: { count: number; total: number };
+  statusBreakdown: Record<string, number>;
   recentContributions: TelecomContribution[];
 }
 
@@ -100,11 +103,28 @@ export default function TelecomDashboardPage() {
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 
-              <StatisticCard label="Linked Phone Numbers" value={data.linkedPhoneCount} />
-              <StatisticCard label="Total Contributions" value={data.contributionCount} />
+              <StatisticCard label="Total Registered Members" value={data.registeredMemberCount} />
               <StatisticCard
-                label="Contribution Volume"
+                label="Today's Contributions"
+                value={`TSh ${Number(data.today.total).toLocaleString("en-TZ")}`}
+                hint={`${data.today.count} transaction${data.today.count === 1 ? "" : "s"} today`}
+              />
+              <StatisticCard
+                label="Successful Transactions"
+                value={data.statusBreakdown["Completed"] ?? 0}
+              />
+              <StatisticCard
+                label="Pending Transactions"
+                value={data.statusBreakdown["Pending"] ?? 0}
+              />
+              <StatisticCard
+                label="Failed Transactions"
+                value={data.statusBreakdown["Failed"] ?? 0}
+              />
+              <StatisticCard
+                label="Contribution Summary"
                 value={`TSh ${Number(data.contributionTotal).toLocaleString("en-TZ")}`}
+                hint={`${data.contributionCount} total, ${data.linkedPhoneCount} linked numbers`}
               />
 
             </div>
