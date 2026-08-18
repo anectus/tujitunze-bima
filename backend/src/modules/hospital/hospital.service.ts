@@ -791,8 +791,8 @@ export class HospitalService {
 
       await manager.query(
         `UPDATE healthcare_claims
-         SET claim_status = $2, approved_amount = COALESCE($3, approved_amount),
-             processed_date = CASE WHEN $2 IN ('Approved', 'Rejected') THEN NOW() ELSE processed_date END,
+         SET claim_status = $2::varchar, approved_amount = COALESCE($3, approved_amount),
+             processed_date = CASE WHEN $2::varchar IN ('Approved', 'Rejected') THEN NOW() ELSE processed_date END,
              remarks = COALESCE($4, remarks)
          WHERE claim_id = $1`,
         [claimId, data.status, approvedAmount, data.remarks ?? null],

@@ -35,31 +35,7 @@ const SECTIONS: DashboardSection[] = [
     title: "Contribution",
     description: "Make a contribution and see how much you've saved in total.",
   },
-  {
-    href: "/membership",
-    title: "Health Fund Status",
-    description: "Your Health Wallet balance and insurance coverage status.",
-  },
-  {
-    href: "/hospitals",
-    title: "Healthcare Services",
-    description: "Browse hospitals in the Tujitunze network.",
-  },
-  {
-    href: "/verifications",
-    title: "Hospital Verification",
-    description: "History of hospital check-in verifications.",
-  },
-  {
-    href: "/insurance/claims",
-    title: "Claims",
-    description: "Track your submitted claims and their status.",
-  },
-  {
-    href: "/notifications",
-    title: "Notifications",
-    description: "Contribution, membership, and security alerts.",
-  },
+  
   {
     href: "/wallet/transactions",
     title: "Transaction History",
