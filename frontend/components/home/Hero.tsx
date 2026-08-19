@@ -155,36 +155,6 @@ export default function Hero() {
 
                 </div>
 
-
-
-
-                {/* Feature 3 */}
-                <div className="flex items-start gap-4">
-
-                  <div className="
-                    bg-blue-100
-                    text-blue-700
-                    rounded-full
-                    p-3
-                  ">
-                    🏥
-                  </div>
-
-                  <div>
-                    <h3 className="font-semibold text-gray-900">
-                      Healthcare Verification
-                    </h3>
-
-                    <p className="text-gray-600 text-sm">
-                      Hospitals verify active members before services.
-                    </p>
-                  </div>
-
-                </div>
-
-
-
-
                 {/* Feature 4 */}
                 <div className="flex items-start gap-4">
 

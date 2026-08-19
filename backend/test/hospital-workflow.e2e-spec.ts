@@ -109,9 +109,10 @@ describe('Hospital verify -> treatment -> claim -> payment workflow (e2e)', () =
       `DELETE FROM healthcare_claims WHERE hospital_id = ANY($1)`,
       [createdHospitalIds],
     );
-    await dataSource.query(`DELETE FROM treatments WHERE hospital_id = ANY($1)`, [
-      createdHospitalIds,
-    ]);
+    await dataSource.query(
+      `DELETE FROM treatments WHERE hospital_id = ANY($1)`,
+      [createdHospitalIds],
+    );
     await dataSource.query(
       `DELETE FROM healthcare_verifications WHERE hospital_id = ANY($1)`,
       [createdHospitalIds],
@@ -146,9 +147,15 @@ describe('Hospital verify -> treatment -> claim -> payment workflow (e2e)', () =
       .send({ verificationMethod: 'NIDA', identifier: patientNida })
       .expect(201);
 
-    expect(response.body.verification_result).toBe('Eligible');
-    expect(response.body.member.firstName).toBe('Patient');
-    verificationId = response.body.verification_id;
+    const verificationBody = response.body as {
+      verification_result: string;
+      member: { firstName: string };
+      verification_id: number;
+    };
+
+    expect(verificationBody.verification_result).toBe('Eligible');
+    expect(verificationBody.member.firstName).toBe('Patient');
+    verificationId = verificationBody.verification_id;
   });
 
   it('lists the verification back for hospital A and shows the member as eligible', async () => {
@@ -157,22 +164,16 @@ describe('Hospital verify -> treatment -> claim -> payment workflow (e2e)', () =
       .set('Authorization', `Bearer ${hospitalAToken()}`)
       .expect(200);
 
-    expect(
-      listResponse.body.items.some(
-        (v: { verification_id: number }) => v.verification_id === verificationId,
-      ),
-    ).toBe(true);
+    const items = listResponse.body.items as Array<{ verification_id: number }>;
+    expect(items.some((v) => v.verification_id === verificationId)).toBe(true);
 
     const eligibleResponse = await request(app.getHttpServer())
       .get('/hospital/eligible-members')
       .set('Authorization', `Bearer ${hospitalAToken()}`)
       .expect(200);
 
-    expect(
-      eligibleResponse.body.some(
-        (m: { member_id: number }) => m.member_id === patientUserId,
-      ),
-    ).toBe(true);
+    const eligibleList = eligibleResponse.body as Array<{ member_id: number }>;
+    expect(eligibleList.some((m) => m.member_id === patientUserId)).toBe(true);
   });
 
   it('records a treatment linked to the verification', async () => {
@@ -186,8 +187,9 @@ describe('Hospital verify -> treatment -> claim -> payment workflow (e2e)', () =
       })
       .expect(201);
 
-    expect(response.body.treatment_status).toBe('Active');
-    treatmentId = response.body.treatment_id;
+    const treatmentBody = response.body as { treatment_status: string; treatment_id: number };
+    expect(treatmentBody.treatment_status).toBe('Active');
+    treatmentId = treatmentBody.treatment_id;
   });
 
   it("rejects hospital B linking a claim/treatment to hospital A's verification/treatment", async () => {
@@ -230,8 +232,9 @@ describe('Hospital verify -> treatment -> claim -> payment workflow (e2e)', () =
       })
       .expect(201);
 
-    expect(response.body.claim_status).toBe('Draft');
-    claimId = response.body.claim_id;
+    const claimBody = response.body as { claim_status: string; claim_id: number };
+    expect(claimBody.claim_status).toBe('Draft');
+    claimId = claimBody.claim_id;
   });
 
   it("rejects hospital B submitting hospital A's draft claim", async () => {
@@ -247,7 +250,8 @@ describe('Hospital verify -> treatment -> claim -> payment workflow (e2e)', () =
       .set('Authorization', `Bearer ${hospitalAToken()}`)
       .expect(200);
 
-    expect(response.body.status).toBe('Pending');
+    const submitBody = response.body as { status: string };
+    expect(submitBody.status).toBe('Pending');
   });
 
   it("rejects hospital B approving hospital A's claim", async () => {
@@ -265,8 +269,9 @@ describe('Hospital verify -> treatment -> claim -> payment workflow (e2e)', () =
       .send({ status: 'Approved' })
       .expect(200);
 
-    expect(response.body.status).toBe('Approved');
-    expect(Number(response.body.approvedAmount)).toBe(15000);
+    const approvalBody = response.body as { status: string; approvedAmount: string | number };
+    expect(approvalBody.status).toBe('Approved');
+    expect(Number(approvalBody.approvedAmount)).toBe(15000);
 
     const paymentsA = await request(app.getHttpServer())
       .get('/hospital/payments?status=Pending')

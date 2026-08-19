@@ -19,14 +19,6 @@ const services = [
   },
 
   {
-    title: "Hospital Verification",
-    description:
-      "Healthcare providers can verify active members before providing healthcare services.",
-    icon: "🏥",
-    link: "/healthcare",
-  },
-
-  {
     title: "Bank Integration",
     description:
       "Provides secure connection with bank accounts for healthcare financial transactions.",
@@ -34,21 +26,7 @@ const services = [
     link: "/banks",
   },
 
-  {
-    title: "Member Management",
-    description:
-      "Manages member registration, NIDA identification, phone numbers, profiles, and account status.",
-    icon: "👥",
-    link: "/members",
-  },
-
-  {
-    title: "Secure Healthcare Access",
-    description:
-      "Provides trusted access control using authentication, authorization, and member verification.",
-    icon: "🔐",
-    link: "/security",
-  },
+  
 ];
 
 

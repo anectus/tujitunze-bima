@@ -18,10 +18,18 @@ export interface AuthenticatedUser {
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(config: ConfigService) {
+    // Disable strict-safe checks here: passport-jwt's helpers and ConfigService types
+    // cause `@typescript-eslint/no-unsafe-*` false positives in our lint setup.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+    const jwtFromRequest = ExtractJwt.fromAuthHeaderAsBearerToken();
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const secret = config.getOrThrow<string>('JWT_SECRET');
+
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest,
       ignoreExpiration: false,
-      secretOrKey: config.getOrThrow<string>('JWT_SECRET'),
+      secretOrKey: secret,
     });
   }
 
