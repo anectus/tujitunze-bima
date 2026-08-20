@@ -1,0 +1,1 @@
+{"version":3,"file":"update-transaction-status.dto.js","sourceRoot":"","sources":["../../../../src/modules/bank/dto/update-transaction-status.dto.ts"],"names":[],"mappings":";;;;;;;;;;;;AAAA,qDAAuC;AAEvC,MAAa,0BAA0B;IAErC,MAAM,CAAU;CACjB;AAHD,gEAGC;AADC;IADC,IAAA,sBAAI,EAAC,CAAC,UAAU,EAAE,WAAW,EAAE,QAAQ,CAAC,CAAC;;0DAC1B"}
