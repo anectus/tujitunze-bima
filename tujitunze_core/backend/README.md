@@ -1,0 +1,1 @@
+Backend scaffold (NestJS). Implement modules: auth, users, roles, wallets, transactions, contributions, reconciliation, notifications, audit. Use TypeORM + PostgreSQL. Add global ValidationPipe, JwtAuthGuard, RolesGuard, and AuditLogsService as early priorities.
